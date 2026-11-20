@@ -16,7 +16,7 @@ version from the manifests, tags `v<version>-fork.<n>`, and attaches to a GitHub
 Release:
 
 - desktop installers for linux x64 (rpm), windows x64 (nsis) and macOS arm64 (dmg)
-- the `t3` CLI archives for linux x64 and windows x64, plus `SHA256SUMS` for `t3 update`
+- the `t3` CLI archives for linux x64 and macOS arm64, plus `SHA256SUMS` for `t3 update`
 - an Android APK for arm64-v8a
 
 Nothing runs on push, and no release ever writes a version number into a tracked file.

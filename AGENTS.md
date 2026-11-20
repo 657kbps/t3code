@@ -10,12 +10,11 @@ It tracks upstream main and carries no CI of its own: every upstream workflow is
 
 Sync with `scripts/fork-sync-upstream.sh`. It merges `upstream/main` and keeps this fork's deletions deleted — upstream edits `.github/workflows` constantly, so git reports a modify/delete conflict for every file it touched — then lists any workflow upstream has added since, which arrives without a conflict and would start running here.
 
-`fork-release.yml` builds three desktop installers (linux x64 rpm, win x64 nsis, mac arm64 dmg), the `t3` CLI archives for linux x64 and win x64, an Android arm64-v8a APK, and regenerates `SHA256SUMS` for `t3 update`. The rpm is also published as a dnf repository from the `gh-pages` branch.
+`fork-release.yml` builds three desktop installers (linux x64 rpm, win x64 nsis, mac arm64 dmg), the `t3` CLI archives for linux x64 and macOS arm64, an Android arm64-v8a APK, and regenerates `SHA256SUMS` for `t3 update`. The rpm is also published as a dnf repository from the `gh-pages` branch.
 
-Fork-local patches to upstream source, each of which will conflict when upstream edits that line and should be re-applied by hand:
+One fork-local patch to upstream source, which will conflict when upstream edits that line and should be re-applied by hand: `packages/shared/src/cliRelease.ts` points `CLI_RELEASE_REPOSITORY` at this fork so `t3 update` reads this fork's releases, and `apps/server/src/cli/update.test.ts` asserts the same URL.
 
-- `packages/shared/src/cliRelease.ts` — `CLI_RELEASE_REPOSITORY` points at this fork, so `t3 update` reads this fork's releases. `apps/server/src/cli/update.test.ts` asserts the same URL.
-- `scripts/build-desktop-artifact.ts` — the Linux package is named `t3` so `dnf install t3` works.
+The rpm is published to a dnf repository on `gh-pages`. electron-builder names the package after the product (`t3-code`), so the repository also carries a `t3` meta package that requires it — that is what `dnf install t3` resolves.
 
 The Windows desktop build is cross-compiled on Linux, as upstream does it: a Windows host compiles native modules from source and unpacks 91 files into the packaged payload, over the 80 the build's own guard allows, while the staged install resolves prebuilt win32 packages on Linux. That job therefore runs `cargo xwin` for the resource monitor, sets `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR`, and embeds the Linux CLI archive as its WSL runtime — so it runs after the CLI job.
 

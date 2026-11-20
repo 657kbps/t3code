@@ -252,15 +252,12 @@ jobs:
             arch: x64
             rust_target: x86_64-unknown-linux-gnu
             resource_key: linux-x64
-            exe_target: ""
-          # Cross-built from Linux, matching the desktop windows build.
-          - key: win-x64
-            os: ubuntu-24.04
-            platform: win
-            arch: x64
-            rust_target: x86_64-pc-windows-msvc
-            resource_key: win32-x64
-            exe_target: win-x64
+          - key: mac-arm64
+            os: macos-15
+            platform: mac
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            resource_key: mac-arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -286,44 +283,37 @@ jobs:
       # patchelf: the Linux archive ships libatomic.so.1 and points RUNPATH at it.
       # libsecret: a native module builds against it while bundling.
       - name: Install Linux build libraries
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsecret-1-dev pkg-config patchelf
-
-      - name: Install cargo-xwin
-        if: matrix.platform == 'win'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-xwin
 
       - name: Build the resource monitor
         run: |
           set -euo pipefail
           rustup target add "${{ matrix.rust_target }}"
-          if [[ "${{ matrix.platform }}" == "win" ]]; then
-            cargo xwin build --locked --release \
-              --manifest-path native/resource-monitor/Cargo.toml \
-              --target "${{ matrix.rust_target }}"
-          else
-            cargo build --locked --release \
-              --manifest-path native/resource-monitor/Cargo.toml \
-              --target "${{ matrix.rust_target }}"
-          fi
+          cargo build --locked --release \
+            --manifest-path native/resource-monitor/Cargo.toml \
+            --target "${{ matrix.rust_target }}"
 
       - name: Stage the resource monitor
         run: |
           set -euo pipefail
           binary="t3-resource-monitor"
-          [[ "${{ matrix.platform }}" == "win" ]] && binary="${binary}.exe"
           target_dir="$RUNNER_TEMP/cli-resource-monitor/${{ matrix.resource_key }}"
           mkdir -p "$target_dir"
           cp "native/resource-monitor/target/${{ matrix.rust_target }}/release/${binary}" "$target_dir/${binary}"
+
+      # t3 --version reads the aligned manifests, and the smoke test compares it
+      # with the release version. Nothing here is committed.
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.tag.outputs.version }}"
 
       - name: Build the server bundle and the single executable
         run: |
           set -euo pipefail
           vp run build:desktop:bundle
-          node apps/server/scripts/cli.ts build-exe --verbose ${{ matrix.exe_target && format('--target {0}', matrix.exe_target) || '' }}
+          node apps/server/scripts/cli.ts build-exe --verbose
 
       - name: Build the archive
         run: |
@@ -334,9 +324,7 @@ jobs:
             --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
             --output-dir release-cli
 
-      # The archive holds a Windows executable, which this host cannot run.
       - name: Smoke-test the archive
-        if: matrix.platform != 'win'
         run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.tag.outputs.version }}"
 
       - name: Attach the archive
@@ -453,11 +441,42 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y createrepo-c
+          sudo apt-get install -y createrepo-c rpm
 
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           mkdir -p packages
           gh release download "$TAG" --dir packages --pattern '*.rpm' --clobber
+
+          # electron-builder names the package after the product, so the release
+          # ships t3-code. A meta package is what makes `dnf install t3` work.
+          rpm_file="$(ls packages/*.rpm)"
+          real_name="$(rpm -qp --qf '%{NAME}' "$rpm_file")"
+          if [[ "$real_name" != "t3" ]]; then
+            version="$(rpm -qp --qf '%{VERSION}' "$rpm_file")"
+            release="$(rpm -qp --qf '%{RELEASE}' "$rpm_file")"
+            work="$RUNNER_TEMP/meta"
+            mkdir -p "$work/BUILD" "$work/RPMS" "$work/SOURCES" "$work/SPECS" "$work/SRPMS"
+            cat > "$work/SPECS/t3.spec" <<SPEC
+          %global debug_package %{nil}
+          Name:           t3
+          Version:        ${version}
+          Release:        ${release}
+          Summary:        T3 Code desktop (personal fork)
+          License:        MIT
+          Requires:       ${real_name}
+          %description
+          Meta package that pulls in ${real_name}.
+          %prep
+          %build
+          %install
+          mkdir -p %{buildroot}/usr/share/t3-meta
+          echo "Installed by the ${real_name} package." > %{buildroot}/usr/share/t3-meta/README
+          %files
+          /usr/share/t3-meta
+          SPEC
+            rpmbuild --define "_topdir $work" -bb "$work/SPECS/t3.spec"
+            cp "$work"/RPMS/*/t3-*.rpm packages/
+          fi
 
           if git clone --quiet --depth 1 --branch gh-pages "$remote" site 2>/dev/null; then
             :
@@ -467,7 +486,10 @@ jobs:
             git -C site remote add origin "$remote"
           fi
 
+          # Pages caps a published site at 1 GB and an rpm is ~200 MB, so the
+          # repository carries only the newest build of each package.
           mkdir -p site/packages
+          rm -f site/packages/*.rpm
           cp packages/*.rpm site/packages/
           createrepo_c --quiet site
 

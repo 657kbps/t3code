@@ -2916,8 +2916,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.afterPack = path.join(repoRoot, "scripts/linux-after-pack.ts");
     buildConfig.linux = {
       target: target === "AppImage" ? [target, "deb"] : [target],
-      // The package is named t3 so `dnf install t3` works against this fork's repo.
-      packageName: "t3",
       executableName: "t3code",
       icon: "icons",
       category: "Development",
