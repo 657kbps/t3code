@@ -35,10 +35,19 @@ jobs:
       targets: ${{ steps.next.outputs.targets }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # actions/checkout enumerates submodules and dies here: the tree carries
+          # two gitlinks under .repos/alchemy-effect/submodules with no
+          # .gitmodules, so any submodule command is fatal. Fetch by hand.
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$GITHUB_REF"
+          git checkout -q --force FETCH_HEAD
 
       - id: next
         name: Compute the next version
@@ -54,7 +63,7 @@ jobs:
             if [[ "$n" =~ ^[0-9]+$ ]] && (( n >= next )); then
               next=$((n + 1))
             fi
-          done < <(git tag -l "v${base}-fork.*")
+          done < <(git ls-remote --tags --refs origin "refs/tags/v${base}-fork.*" | sed 's|.*refs/tags/||')
 
           echo "version=${base}-fork.${next}" >> "$GITHUB_OUTPUT"
           echo "tag=v${base}-fork.${next}" >> "$GITHUB_OUTPUT"
@@ -98,10 +107,17 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-          persist-credentials: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "refs/tags/${TAG}"
+          git checkout -q --force FETCH_HEAD
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
@@ -116,6 +132,7 @@ jobs:
             libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 imagemagick
 
       - name: Build the installer
+        shell: bash
         run: |
           node scripts/build-desktop-artifact.ts \
             --platform "${{ matrix.platform }}" \
