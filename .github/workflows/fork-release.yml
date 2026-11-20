@@ -105,6 +105,9 @@ jobs:
         include: ${{ fromJson(needs.tag.outputs.targets) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         env:
@@ -132,7 +135,6 @@ jobs:
             libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 imagemagick
 
       - name: Build the installer
-        shell: bash
         run: |
           node scripts/build-desktop-artifact.ts \
             --platform "${{ matrix.platform }}" \
@@ -142,7 +144,6 @@ jobs:
             --verbose
 
       - name: Attach the artifacts
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.tag.outputs.tag }}
