@@ -1,20 +1,22 @@
 name: Fork release
 
 # Tags and packages this fork on demand. The version comes from the manifests
-# plus this fork's own tags and is handed to the build as --build-version, so a
+# plus this fork's own tags and is handed to the builds as --build-version, so a
 # release never writes a version into a tracked file: syncing upstream main
 # cannot conflict here.
 
 on:
   workflow_dispatch:
     inputs:
-      platforms:
-        description: Desktop installers to build
+      targets:
+        description: What to build
         type: choice
-        default: linux
+        default: all
         options:
-          - linux
           - all
+          - desktop
+          - cli
+          - android
 
 permissions:
   contents: write
@@ -32,31 +34,29 @@ jobs:
     outputs:
       version: ${{ steps.next.outputs.version }}
       tag: ${{ steps.next.outputs.tag }}
-      targets: ${{ steps.next.outputs.targets }}
+      desktop: ${{ steps.next.outputs.desktop }}
+      cli: ${{ steps.next.outputs.cli }}
+      android: ${{ steps.next.outputs.android }}
     steps:
-      - name: Checkout
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # actions/checkout enumerates submodules and dies here: the tree carries
-          # two gitlinks under .repos/alchemy-effect/submodules with no
-          # .gitmodules, so any submodule command is fatal. Fetch by hand.
-          git init -q .
-          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$GITHUB_REF"
-          git checkout -q --force FETCH_HEAD
+      - uses: ./.github/actions/fork-checkout
 
       - id: next
         name: Compute the next version
         env:
-          PLATFORMS: ${{ inputs.platforms }}
+          TARGETS: ${{ inputs.targets }}
         run: |
           set -euo pipefail
-          base="$(jq -r .version apps/server/package.json)"
+          case "${TARGETS:-all}" in
+            desktop) desktop=true cli=false android=false ;;
+            cli) desktop=false cli=true android=false ;;
+            android) desktop=false cli=false android=true ;;
+            *) desktop=true cli=true android=true ;;
+          esac
+          echo "desktop=${desktop}" >> "$GITHUB_OUTPUT"
+          echo "cli=${cli}" >> "$GITHUB_OUTPUT"
+          echo "android=${android}" >> "$GITHUB_OUTPUT"
 
+          base="$(jq -r .version apps/server/package.json)"
           next=1
           while read -r tag; do
             n="${tag##*-fork.}"
@@ -67,18 +67,6 @@ jobs:
 
           echo "version=${base}-fork.${next}" >> "$GITHUB_OUTPUT"
           echo "tag=v${base}-fork.${next}" >> "$GITHUB_OUTPUT"
-
-          # One arch per platform: electron-builder names its update feed per
-          # channel, so a second arch of the same platform collides on it.
-          case "${PLATFORMS:-linux}" in
-            all)
-              targets='[{"key":"linux-x64","os":"ubuntu-24.04","platform":"linux","target":"AppImage","arch":"x64"},{"key":"win-x64","os":"windows-2025","platform":"win","target":"nsis","arch":"x64"},{"key":"mac-arm64","os":"macos-15","platform":"mac","target":"dmg","arch":"arm64"}]'
-              ;;
-            *)
-              targets='[{"key":"linux-x64","os":"ubuntu-24.04","platform":"linux","target":"AppImage","arch":"x64"}]'
-              ;;
-          esac
-          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
 
       - name: Create the tag and release
         env:
@@ -93,46 +81,54 @@ jobs:
           fi
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "T3 Code $VERSION (fork)" \
+            --title "T3 Code $VERSION" \
             --generate-notes
 
   desktop:
     name: Desktop ${{ matrix.key }}
     needs: tag
+    if: needs.tag.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.tag.outputs.targets) }}
+        include:
+          - key: linux-x64
+            os: ubuntu-24.04
+            platform: linux
+            target: rpm
+            arch: x64
+          - key: win-x64
+            os: windows-2025
+            platform: win
+            target: nsis
+            arch: x64
+          - key: mac-arm64
+            os: macos-15
+            platform: mac
+            target: dmg
+            arch: arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
     steps:
-      - name: Checkout
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git init -q .
-          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "refs/tags/${TAG}"
-          git checkout -q --force FETCH_HEAD
+      - uses: ./.github/actions/fork-checkout
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
-      # cargo ships with the hosted images; the build's own preflight reports it
-      # when a prerequisite is missing.
+      # rpm is what the dnf repository serves; cargo ships with the hosted images
+      # and the build's own preflight reports anything else that is missing.
       - name: Install Linux desktop build libraries
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 imagemagick
+            libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 \
+            imagemagick rpm cpio
 
       - name: Build the installer
         run: |
@@ -151,16 +147,218 @@ jobs:
           set -euo pipefail
           mkdir -p release-upload
           shopt -s nullglob
-          for file in release/*.AppImage release/*.deb release/*.exe release/*.dmg \
-            release/*.zip release/*.blockmap release/*.yml; do
+          for file in release/*.rpm release/*.deb release/*.exe release/*.dmg release/*.zip \
+            release/*.blockmap release/*.yml; do
             # builder-debug.yml is electron-builder's config dump, not a feed.
             [[ "$file" == "release/builder-debug.yml" ]] && continue
             cp "$file" release-upload/
           done
           # A prerelease version makes electron-builder name the update feed
-          # after it (fork-linux.yml), but the installed app reports the
-          # "latest" channel, so it would look for a file this release lacks.
+          # after it (fork-mac.yml), but the installed app reports the "latest"
+          # channel and would look for a file this release lacks.
           for file in release-upload/fork*.yml; do
             mv "$file" "release-upload/latest${file#release-upload/fork}"
           done
           gh release upload "$TAG" release-upload/* --clobber
+
+  cli:
+    name: CLI ${{ matrix.key }}
+    needs: tag
+    if: needs.tag.outputs.cli == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: linux-x64
+            os: ubuntu-24.04
+            platform: linux
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+            resource_key: linux-x64
+            exe_target: ""
+          - key: win-x64
+            os: windows-2025
+            platform: win
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            resource_key: win32-x64
+            exe_target: win-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: ./.github/actions/fork-checkout
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+
+      # patchelf: the Linux archive ships libatomic.so.1 and points RUNPATH at it.
+      # libsecret: a native module builds against it while bundling.
+      - name: Install Linux build libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config patchelf
+
+      - name: Build the resource monitor
+        run: >-
+          cargo build --locked --release
+          --manifest-path native/resource-monitor/Cargo.toml
+          --target ${{ matrix.rust_target }}
+
+      - name: Stage the resource monitor
+        run: |
+          set -euo pipefail
+          binary="t3-resource-monitor"
+          [[ "${{ matrix.platform }}" == "win" ]] && binary="${binary}.exe"
+          target_dir="$RUNNER_TEMP/cli-resource-monitor/${{ matrix.resource_key }}"
+          mkdir -p "$target_dir"
+          cp "native/resource-monitor/target/${{ matrix.rust_target }}/release/${binary}" "$target_dir/${binary}"
+
+      - name: Build the server bundle and the single executable
+        run: |
+          set -euo pipefail
+          vp run build:desktop:bundle
+          node apps/server/scripts/cli.ts build-exe --verbose ${{ matrix.exe_target && format('--target {0}', matrix.exe_target) || '' }}
+
+      - name: Build the archive
+        run: |
+          node scripts/build-cli-archive.ts \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --version "${{ needs.tag.outputs.version }}" \
+            --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
+            --output-dir release-cli
+
+      - name: Smoke-test the archive
+        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.tag.outputs.version }}"
+
+      - name: Attach the archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: gh release upload "$TAG" release-cli/* --clobber
+
+  # t3 update verifies an archive against SHA256SUMS in the same release, so the
+  # one file is regenerated once every CLI archive is published.
+  checksums:
+    name: Checksums
+    needs: [tag, cli]
+    if: needs.tag.outputs.cli == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Publish SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p archives
+          gh release download "$TAG" --dir archives --clobber \
+            --pattern 't3-*.tar.gz' --pattern 't3-*.zip'
+          cd archives
+          shopt -s nullglob
+          archives=(t3-*)
+          if [[ ${#archives[@]} -eq 0 ]]; then
+            echo "No CLI archives were published." >&2
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber
+
+  android:
+    name: Android APK
+    needs: tag
+    if: needs.tag.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: ./.github/actions/fork-checkout
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+
+      # apps/mobile/android is generated, not tracked.
+      - name: Prebuild the native project
+        run: vp exec expo prebuild --clean --platform android --no-install
+
+      - name: Build the release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Attach the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(apps/mobile/android/app/build/outputs/apk/release/*.apk)
+          if [[ ${#apks[@]} -eq 0 ]]; then
+            echo "No release APK was produced." >&2
+            ls -R apps/mobile/android/app/build/outputs >&2 || true
+            exit 1
+          fi
+          mkdir -p release-apk
+          cp "${apks[0]}" "release-apk/T3-Code-${VERSION}-arm64-v8a.apk"
+          gh release upload "$TAG" release-apk/* --clobber
+
+  # dnf needs repodata, so the rpm is served from GitHub Pages rather than only
+  # from the release assets.
+  rpm-repo:
+    name: RPM repository
+    needs: [tag, desktop]
+    if: needs.tag.outputs.desktop == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Publish repodata to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y createrepo-c
+
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          mkdir -p packages
+          gh release download "$TAG" --dir packages --pattern '*.rpm' --clobber
+
+          if git clone --quiet --depth 1 --branch gh-pages "$remote" site 2>/dev/null; then
+            :
+          else
+            mkdir site
+            git -C site init --quiet --initial-branch=gh-pages
+            git -C site remote add origin "$remote"
+          fi
+
+          mkdir -p site/packages
+          cp packages/*.rpm site/packages/
+          createrepo_c --quiet site
+
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The repository already holds this rpm."
+            exit 0
+          fi
+          git commit --quiet -m "rpm: publish ${TAG}"
+          git push --quiet origin gh-pages

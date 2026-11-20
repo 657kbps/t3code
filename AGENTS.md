@@ -10,6 +10,15 @@ It tracks upstream main and carries no CI of its own: every upstream workflow is
 
 Sync with `scripts/fork-sync-upstream.sh`. It merges `upstream/main` and keeps this fork's deletions deleted — upstream edits `.github/workflows` constantly, so git reports a modify/delete conflict for every file it touched — then lists any workflow upstream has added since, which arrives without a conflict and would start running here.
 
+`fork-release.yml` builds three desktop installers (linux x64 rpm, win x64 nsis, mac arm64 dmg), the `t3` CLI archives for linux x64 and win x64, an Android arm64-v8a APK, and regenerates `SHA256SUMS` for `t3 update`. The rpm is also published as a dnf repository from the `gh-pages` branch.
+
+Fork-local patches to upstream source, each of which will conflict when upstream edits that line and should be re-applied by hand:
+
+- `packages/shared/src/cliRelease.ts` — `CLI_RELEASE_REPOSITORY` points at this fork, so `t3 update` reads this fork's releases. `apps/server/src/cli/update.test.ts` asserts the same URL.
+- `scripts/build-desktop-artifact.ts` — the Linux package is named `t3` (so `dnf install t3` works), and the Windows payload file limit is 128 because a native Windows build unpacks 91 files where upstream's Linux cross-build unpacks at most 80.
+
+The Windows and Linux installers are updated through package managers, not `electron-updater`: without an AppImage there is no in-app update on Linux, and the Windows build carries no WSL runtime.
+
 Never write a version number into a tracked file. Upstream bumps `apps/{server,desktop,web}/package.json` and `packages/contracts/package.json` on main at release time, so an edit here conflicts on every sync. `fork-release.yml` instead derives `X.Y.Z-fork.N` from the manifests plus this fork's own tags and hands it to the build as `--build-version`, which the packager applies and restores around the build. Prefer a number to a commit hash: semver compares a prerelease part as text, so a hash sorts against time and breaks electron-updater.
 
 ## What makes T3 Code special?
