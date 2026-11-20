@@ -38,8 +38,19 @@ jobs:
       cli: ${{ steps.next.outputs.cli }}
       android: ${{ steps.next.outputs.android }}
     steps:
-      - uses: ./.github/actions/fork-checkout
-
+      # actions/checkout enumerates submodules and dies here: the tree carries
+      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
+      - name: Checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git checkout -q --force FETCH_HEAD
       - id: next
         name: Compute the next version
         env:
@@ -113,10 +124,20 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: ./.github/actions/fork-checkout
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-
+      # actions/checkout enumerates submodules and dies here: the tree carries
+      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
+      - name: Checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git checkout -q --force FETCH_HEAD
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
@@ -189,10 +210,20 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: ./.github/actions/fork-checkout
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-
+      # actions/checkout enumerates submodules and dies here: the tree carries
+      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
+      - name: Checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git checkout -q --force FETCH_HEAD
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
@@ -282,10 +313,20 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: ./.github/actions/fork-checkout
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-
+      # actions/checkout enumerates submodules and dies here: the tree carries
+      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
+      - name: Checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git checkout -q --force FETCH_HEAD
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
