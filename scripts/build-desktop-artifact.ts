@@ -1062,7 +1062,9 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 80;
+// Upstream's 80 is tuned to a Windows build cross-compiled on Linux; a native
+// Windows build compiles node-pty from source and lands at 91.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 128;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {
@@ -2916,6 +2918,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.afterPack = path.join(repoRoot, "scripts/linux-after-pack.ts");
     buildConfig.linux = {
       target: target === "AppImage" ? [target, "deb"] : [target],
+      // The package is named t3 so `dnf install t3` works against this fork's repo.
+      packageName: "t3",
       executableName: "t3code",
       icon: "icons",
       category: "Development",
