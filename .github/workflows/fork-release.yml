@@ -1,0 +1,148 @@
+name: Fork release
+
+# Tags and packages this fork on demand. The version comes from the manifests
+# plus this fork's own tags and is handed to the build as --build-version, so a
+# release never writes a version into a tracked file: syncing upstream main
+# cannot conflict here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Desktop installers to build
+        type: choice
+        default: linux
+        options:
+          - linux
+          - all
+
+permissions:
+  contents: write
+
+# Two dispatches would compute the same tag and the second would fail on it.
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+      targets: ${{ steps.next.outputs.targets }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: next
+        name: Compute the next version
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          set -euo pipefail
+          base="$(jq -r .version apps/server/package.json)"
+
+          next=1
+          while read -r tag; do
+            n="${tag##*-fork.}"
+            if [[ "$n" =~ ^[0-9]+$ ]] && (( n >= next )); then
+              next=$((n + 1))
+            fi
+          done < <(git tag -l "v${base}-fork.*")
+
+          echo "version=${base}-fork.${next}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${base}-fork.${next}" >> "$GITHUB_OUTPUT"
+
+          # One arch per platform: electron-builder names its update feed per
+          # channel, so a second arch of the same platform collides on it.
+          case "${PLATFORMS:-linux}" in
+            all)
+              targets='[{"key":"linux-x64","os":"ubuntu-24.04","platform":"linux","target":"AppImage","arch":"x64"},{"key":"win-x64","os":"windows-2025","platform":"win","target":"nsis","arch":"x64"},{"key":"mac-arm64","os":"macos-15","platform":"mac","target":"dmg","arch":"arm64"}]'
+              ;;
+            *)
+              targets='[{"key":"linux-x64","os":"ubuntu-24.04","platform":"linux","target":"AppImage","arch":"x64"}]'
+              ;;
+          esac
+          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
+
+      - name: Create the tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          # Rerunning a failed build must not trip over its own release.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists; reusing it."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "T3 Code $VERSION (fork)" \
+            --generate-notes
+
+  desktop:
+    name: Desktop ${{ matrix.key }}
+    needs: tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.tag.outputs.targets) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+
+      # cargo ships with the hosted images; the build's own preflight reports it
+      # when a prerequisite is missing.
+      - name: Install Linux desktop build libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 imagemagick
+
+      - name: Build the installer
+        run: |
+          node scripts/build-desktop-artifact.ts \
+            --platform "${{ matrix.platform }}" \
+            --target "${{ matrix.target }}" \
+            --arch "${{ matrix.arch }}" \
+            --build-version "${{ needs.tag.outputs.version }}" \
+            --verbose
+
+      - name: Attach the artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-upload
+          shopt -s nullglob
+          for file in release/*.AppImage release/*.deb release/*.exe release/*.dmg \
+            release/*.zip release/*.blockmap release/*.yml; do
+            # builder-debug.yml is electron-builder's config dump, not a feed.
+            [[ "$file" == "release/builder-debug.yml" ]] && continue
+            cp "$file" release-upload/
+          done
+          # A prerelease version makes electron-builder name the update feed
+          # after it (fork-linux.yml), but the installed app reports the
+          # "latest" channel, so it would look for a file this release lacks.
+          for file in release-upload/fork*.yml; do
+            mv "$file" "release-upload/latest${file#release-upload/fork}"
+          done
+          gh release upload "$TAG" release-upload/* --clobber

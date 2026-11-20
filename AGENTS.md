@@ -4,6 +4,14 @@ T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provid
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
 
+## This checkout is a fork
+
+It tracks upstream main and carries no CI of its own: every upstream workflow is deleted, and `.github/workflows/fork-release.yml` is the only one left. Do not add a workflow that runs on push.
+
+Sync with `scripts/fork-sync-upstream.sh`. It merges `upstream/main` and keeps this fork's deletions deleted — upstream edits `.github/workflows` constantly, so git reports a modify/delete conflict for every file it touched — then lists any workflow upstream has added since, which arrives without a conflict and would start running here.
+
+Never write a version number into a tracked file. Upstream bumps `apps/{server,desktop,web}/package.json` and `packages/contracts/package.json` on main at release time, so an edit here conflicts on every sync. `fork-release.yml` instead derives `X.Y.Z-fork.N` from the manifests plus this fork's own tags and hands it to the build as `--build-version`, which the packager applies and restores around the build. Prefer a number to a commit hash: semver compares a prerelease part as text, so a hash sorts against time and breaks electron-updater.
+
 ## What makes T3 Code special?
 
 We have over 500,000 users who love T3 Code. It's important we maintain the things they love as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
