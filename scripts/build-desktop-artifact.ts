@@ -1062,9 +1062,7 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-// Upstream's 80 is tuned to a Windows build cross-compiled on Linux; a native
-// Windows build compiles node-pty from source and lands at 91.
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 128;
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 80;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {

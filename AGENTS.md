@@ -15,7 +15,9 @@ Sync with `scripts/fork-sync-upstream.sh`. It merges `upstream/main` and keeps t
 Fork-local patches to upstream source, each of which will conflict when upstream edits that line and should be re-applied by hand:
 
 - `packages/shared/src/cliRelease.ts` — `CLI_RELEASE_REPOSITORY` points at this fork, so `t3 update` reads this fork's releases. `apps/server/src/cli/update.test.ts` asserts the same URL.
-- `scripts/build-desktop-artifact.ts` — the Linux package is named `t3` (so `dnf install t3` works), and the Windows payload file limit is 128 because a native Windows build unpacks 91 files where upstream's Linux cross-build unpacks at most 80.
+- `scripts/build-desktop-artifact.ts` — the Linux package is named `t3` so `dnf install t3` works.
+
+The Windows desktop build is cross-compiled on Linux, as upstream does it: a Windows host compiles native modules from source and unpacks 91 files into the packaged payload, over the 80 the build's own guard allows, while the staged install resolves prebuilt win32 packages on Linux. That job therefore runs `cargo xwin` for the resource monitor, sets `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR`, and embeds the Linux CLI archive as its WSL runtime — so it runs after the CLI job.
 
 The Windows and Linux installers are updated through package managers, not `electron-updater`: without an AppImage there is no in-app update on Linux, and the Windows build carries no WSL runtime.
 

@@ -7,16 +7,6 @@ name: Fork release
 
 on:
   workflow_dispatch:
-    inputs:
-      targets:
-        description: What to build
-        type: choice
-        default: all
-        options:
-          - all
-          - desktop
-          - cli
-          - android
 
 permissions:
   contents: write
@@ -34,9 +24,6 @@ jobs:
     outputs:
       version: ${{ steps.next.outputs.version }}
       tag: ${{ steps.next.outputs.tag }}
-      desktop: ${{ steps.next.outputs.desktop }}
-      cli: ${{ steps.next.outputs.cli }}
-      android: ${{ steps.next.outputs.android }}
     steps:
       # actions/checkout enumerates submodules and dies here: the tree carries
       # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
@@ -49,24 +36,13 @@ jobs:
           token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$GITHUB_REF"
           git checkout -q --force FETCH_HEAD
+
       - id: next
         name: Compute the next version
-        env:
-          TARGETS: ${{ inputs.targets }}
         run: |
           set -euo pipefail
-          case "${TARGETS:-all}" in
-            desktop) desktop=true cli=false android=false ;;
-            cli) desktop=false cli=true android=false ;;
-            android) desktop=false cli=false android=true ;;
-            *) desktop=true cli=true android=true ;;
-          esac
-          echo "desktop=${desktop}" >> "$GITHUB_OUTPUT"
-          echo "cli=${cli}" >> "$GITHUB_OUTPUT"
-          echo "android=${android}" >> "$GITHUB_OUTPUT"
-
           base="$(jq -r .version apps/server/package.json)"
           next=1
           while read -r tag; do
@@ -95,10 +71,10 @@ jobs:
             --title "T3 Code $VERSION" \
             --generate-notes
 
+  # Linux and macOS build on their own hosts.
   desktop:
     name: Desktop ${{ matrix.key }}
     needs: tag
-    if: needs.tag.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -107,11 +83,6 @@ jobs:
             os: ubuntu-24.04
             platform: linux
             target: rpm
-            arch: x64
-          - key: win-x64
-            os: windows-2025
-            platform: win
-            target: nsis
             arch: x64
           - key: mac-arm64
             os: macos-15
@@ -124,8 +95,6 @@ jobs:
       run:
         shell: bash
     steps:
-      # actions/checkout enumerates submodules and dies here: the tree carries
-      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
       - name: Checkout
         env:
           GH_TOKEN: ${{ github.token }}
@@ -136,13 +105,14 @@ jobs:
           token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$REF"
           git checkout -q --force FETCH_HEAD
+
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
-      # rpm is what the dnf repository serves; cargo ships with the hosted images
-      # and the build's own preflight reports anything else that is missing.
+      # cargo ships with the hosted images; the build's own preflight reports
+      # anything else that is missing. rpm is what the dnf repository serves.
       - name: Install Linux desktop build libraries
         if: matrix.platform == 'linux'
         run: |
@@ -168,8 +138,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-upload
           shopt -s nullglob
-          for file in release/*.rpm release/*.deb release/*.exe release/*.dmg release/*.zip \
-            release/*.blockmap release/*.yml; do
+          for file in release/*.rpm release/*.dmg release/*.zip release/*.blockmap release/*.yml; do
             # builder-debug.yml is electron-builder's config dump, not a feed.
             [[ "$file" == "release/builder-debug.yml" ]] && continue
             cp "$file" release-upload/
@@ -182,10 +151,97 @@ jobs:
           done
           gh release upload "$TAG" release-upload/* --clobber
 
+  # Cross-compiled on Linux the way upstream does it: a Windows host compiles
+  # node-pty from source and unpacks more native files than the packaged payload
+  # guard allows, while the staged install resolves prebuilt win32 packages.
+  desktop-win:
+    name: Desktop win-x64
+    needs: [tag, cli]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$REF"
+          git checkout -q --force FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+
+      - name: Install cargo-xwin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-xwin
+
+      - name: Build the resource monitor for Windows
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-pc-windows-msvc
+          cargo xwin build --locked --release \
+            --manifest-path native/resource-monitor/Cargo.toml \
+            --target x86_64-pc-windows-msvc
+
+      # The Windows app runs the server inside WSL, so it embeds the same-arch
+      # Linux CLI archive the CLI job publishes.
+      - name: Fetch the WSL runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p wsl-runtime
+          gh release download "$TAG" --dir wsl-runtime --pattern 't3-*-linux-x64.tar.gz'
+
+      - name: Build the installer
+        env:
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(wsl-runtime/*.tar.gz)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "Expected one linux CLI archive, found ${#archives[@]}." >&2
+            exit 1
+          fi
+          node scripts/build-desktop-artifact.ts \
+            --platform win \
+            --target nsis \
+            --arch x64 \
+            --build-version "${{ needs.tag.outputs.version }}" \
+            --wsl-runtime "${archives[0]}" \
+            --verbose
+
+      - name: Attach the artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-upload
+          shopt -s nullglob
+          for file in release/*.exe release/*.blockmap release/*.yml; do
+            [[ "$file" == "release/builder-debug.yml" ]] && continue
+            cp "$file" release-upload/
+          done
+          for file in release-upload/fork*.yml; do
+            mv "$file" "release-upload/latest${file#release-upload/fork}"
+          done
+          gh release upload "$TAG" release-upload/* --clobber
+
   cli:
     name: CLI ${{ matrix.key }}
     needs: tag
-    if: needs.tag.outputs.cli == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -197,8 +253,9 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
             resource_key: linux-x64
             exe_target: ""
+          # Cross-built from Linux, matching the desktop windows build.
           - key: win-x64
-            os: windows-2025
+            os: ubuntu-24.04
             platform: win
             arch: x64
             rust_target: x86_64-pc-windows-msvc
@@ -210,8 +267,6 @@ jobs:
       run:
         shell: bash
     steps:
-      # actions/checkout enumerates submodules and dies here: the tree carries
-      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
       - name: Checkout
         env:
           GH_TOKEN: ${{ github.token }}
@@ -222,24 +277,38 @@ jobs:
           token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$REF"
           git checkout -q --force FETCH_HEAD
+
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
       # patchelf: the Linux archive ships libatomic.so.1 and points RUNPATH at it.
       # libsecret: a native module builds against it while bundling.
       - name: Install Linux build libraries
-        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsecret-1-dev pkg-config patchelf
 
+      - name: Install cargo-xwin
+        if: matrix.platform == 'win'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-xwin
+
       - name: Build the resource monitor
-        run: >-
-          cargo build --locked --release
-          --manifest-path native/resource-monitor/Cargo.toml
-          --target ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          rustup target add "${{ matrix.rust_target }}"
+          if [[ "${{ matrix.platform }}" == "win" ]]; then
+            cargo xwin build --locked --release \
+              --manifest-path native/resource-monitor/Cargo.toml \
+              --target "${{ matrix.rust_target }}"
+          else
+            cargo build --locked --release \
+              --manifest-path native/resource-monitor/Cargo.toml \
+              --target "${{ matrix.rust_target }}"
+          fi
 
       - name: Stage the resource monitor
         run: |
@@ -265,7 +334,9 @@ jobs:
             --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
             --output-dir release-cli
 
+      # The archive holds a Windows executable, which this host cannot run.
       - name: Smoke-test the archive
+        if: matrix.platform != 'win'
         run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.tag.outputs.version }}"
 
       - name: Attach the archive
@@ -275,13 +346,15 @@ jobs:
         run: gh release upload "$TAG" release-cli/* --clobber
 
   # t3 update verifies an archive against SHA256SUMS in the same release, so the
-  # one file is regenerated once every CLI archive is published.
+  # file is regenerated once every CLI archive is published.
   checksums:
     name: Checksums
     needs: [tag, cli]
-    if: needs.tag.outputs.cli == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Publish SHA256SUMS
         env:
@@ -306,15 +379,12 @@ jobs:
   android:
     name: Android APK
     needs: tag
-    if: needs.tag.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
     steps:
-      # actions/checkout enumerates submodules and dies here: the tree carries
-      # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
       - name: Checkout
         env:
           GH_TOKEN: ${{ github.token }}
@@ -325,13 +395,22 @@ jobs:
           token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "${REF:-$GITHUB_REF}"
+          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$REF"
           git checkout -q --force FETCH_HEAD
+
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
-      # apps/mobile/android is generated, not tracked.
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # apps/mobile/android is generated, never tracked, and expo resolves from
+      # that package's node_modules/.bin rather than the workspace root.
       - name: Prebuild the native project
+        working-directory: apps/mobile
         run: vp exec expo prebuild --clean --platform android --no-install
 
       - name: Build the release APK
@@ -361,7 +440,6 @@ jobs:
   rpm-repo:
     name: RPM repository
     needs: [tag, desktop]
-    if: needs.tag.outputs.desktop == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
