@@ -61,8 +61,12 @@ jobs:
           TAG: ${{ steps.next.outputs.tag }}
           VERSION: ${{ steps.next.outputs.version }}
         run: |
-          # Rerunning a failed build must not trip over its own release.
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          set -euo pipefail
+          # Rerunning a failed build must not trip over its own release. The tag
+          # is what every later job fetches, so test it with git rather than
+          # `gh release view`, which reports success for a missing release often
+          # enough to leave the tag uncreated.
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "$TAG already exists; reusing it."
             exit 0
           fi
@@ -70,6 +74,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "T3 Code $VERSION" \
             --generate-notes
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null
 
   # Linux and macOS build on their own hosts.
   desktop:
