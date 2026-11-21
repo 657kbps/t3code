@@ -15,7 +15,7 @@ Two branches, and this one is the fork's own:
 
 GitHub runs a push's workflows from the pushed tree, not from the default branch, so the upstream workflows are disabled through the API, which sticks to the workflow id across upstream edits. A workflow upstream newly adds arrives active; disable it after the sync. [docs/operations/fork-changes.md](docs/operations/fork-changes.md) records how a mirror push covers both.
 
-Sync by merging `upstream/main` into `customized`; there is no script. [docs/operations/fork-changes.md](docs/operations/fork-changes.md) is the inventory a merge keeps: what this fork adds, where that meets upstream, what is deleted on purpose, and how `main` is mirrored. A conflict that page does not cover is one a human decides. A scheduled task does this nightly at 06:00 in this checkout, verifies it with `vp run typecheck`, pushes, and dispatches Fork release.
+Sync by merging `upstream/main` into `customized`; there is no script. [docs/operations/fork-changes.md](docs/operations/fork-changes.md) is the inventory a merge keeps: what this fork adds, where that meets upstream, what is deleted on purpose, and how `main` is mirrored. A conflict that page does not cover is one a human decides. A scheduled task does this nightly at 06:00 in this checkout, verifies it with `vp run typecheck`, pushes, dispatches Fork release, and then watches that run, repairing a failure before it reports.
 
 `fork-release.yml` builds three desktop installers (linux x64 rpm, win x64 nsis, mac arm64 dmg), the `t3` CLI archives for linux x64 and macOS arm64, an Android arm64-v8a APK, and regenerates `SHA256SUMS` for `t3 update`.
 
