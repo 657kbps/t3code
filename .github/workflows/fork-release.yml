@@ -128,7 +128,8 @@ jobs:
           # Every Electron app ships the same Chromium binaries, so rpmbuild's
           # /usr/lib/.build-id links are identical across apps and dnf refuses to
           # install a second one. Nothing reads those links for an app bundle.
-          echo '%_build_id_links none' | sudo tee -a /etc/rpm/macros >/dev/null
+          sudo install -d /etc/rpm
+          echo '%_build_id_links none' | sudo tee /etc/rpm/macros >/dev/null
 
       - name: Build the installer
         run: |
