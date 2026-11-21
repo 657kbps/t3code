@@ -11,9 +11,9 @@ Nothing here is meant for anyone else.
 ## What differs from upstream
 
 This fork keeps no CI. Every upstream workflow is deleted, and
-`.github/workflows/fork-release.yml` is the only one left. On dispatch it reads the
-version from the manifests, tags `v<version>-fork.<n>`, and attaches to a GitHub
-Release:
+`.github/workflows/fork-release.yml` is the only one that runs — upstream's are
+disabled, so a sync cannot start one. On dispatch it reads the version from the
+manifests, tags `v<version>-fork.<n>`, and attaches to a GitHub Release:
 
 - desktop installers for linux x64 (rpm), windows x64 (nsis) and macOS arm64 (dmg)
 - the `t3` CLI archives for linux x64 and macOS arm64, plus `SHA256SUMS` for `t3 update`
@@ -44,6 +44,5 @@ which local patch upstream edits will conflict with.
 sudo dnf install https://github.com/657kbps/t3code/releases/download/v0.1.11-fork.2/T3-Code-0.1.11-fork.2-x86_64.rpm
 ```
 
-`dnf install t3code` by name would need a repository, and GitHub refuses any file over
-100 MB, so hosting the 163 MB rpm needs object storage. `t3 update` reads this fork's
-releases, so the CLI updates itself from here.
+There is no package repository: GitHub refuses any file over 100 MB, and the rpm is
+163 MB. `t3 update` reads this fork's releases, so the CLI updates itself from here.

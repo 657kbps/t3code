@@ -13,15 +13,15 @@ Two branches, and this one is the fork's own:
 
 `customized` carries no upstream CI: every upstream workflow is deleted, and `.github/workflows/fork-release.yml` is the only one left. Do not add a workflow that runs on push.
 
+Deleting a workflow here is not enough, because `main` still holds upstream's copies and GitHub runs a push's workflows from the pushed tree, not from the default branch. Those workflows are therefore disabled through the API, which sticks to the workflow id across upstream edits; a workflow upstream newly adds is the gap. The sync script closes it: it disables every workflow but `fork-release.yml` before pushing `main`, and cancels anything that started anyway. After a sync, check the Actions tab for a workflow the script could not reach — it needs `gh`, and says so when it is missing.
+
 Sync with `scripts/fork-sync-upstream.sh` from `customized`. It fast-forwards `main` to upstream, merges `upstream/main` into the current branch, and keeps this fork's deletions deleted — upstream edits `.github/workflows` constantly, so git reports a modify/delete conflict for every file it touched — then lists any workflow upstream has added since, which arrives without a conflict and would start running here.
 
 `fork-release.yml` builds three desktop installers (linux x64 rpm, win x64 nsis, mac arm64 dmg), the `t3` CLI archives for linux x64 and macOS arm64, an Android arm64-v8a APK, and regenerates `SHA256SUMS` for `t3 update`.
 
-The rpm is installed straight from its release URL. GitHub refuses any file over 100 MB, so neither a Pages site nor a repo branch can host a 163 MB rpm — `dnf install t3code` by name would need object storage (R2/S3) serving `repodata/` next to the rpm.
+The rpm is installed straight from its release URL, never from a repository: GitHub refuses any file over 100 MB, so nothing hosted on GitHub can carry the 163 MB rpm a `repodata` directory would need to point at.
 
 One fork-local patch to upstream source, which will conflict when upstream edits that line and should be re-applied by hand: `packages/shared/src/cliRelease.ts` points `CLI_RELEASE_REPOSITORY` at this fork so `t3 update` reads this fork's releases, and `apps/server/src/cli/update.test.ts` asserts the same URL.
-
-The rpm is published to a dnf repository on `gh-pages`. electron-builder names the package after the product (`t3-code`), so the repository also carries a `t3` meta package that requires it — that is what `dnf install t3` resolves.
 
 The Windows desktop build is cross-compiled on Linux, as upstream does it: a Windows host compiles native modules from source and unpacks 91 files into the packaged payload, over the 80 the build's own guard allows, while the staged install resolves prebuilt win32 packages on Linux. That job therefore runs `cargo xwin` for the resource monitor, sets `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR`, and embeds the Linux CLI archive as its WSL runtime — so it runs after the CLI job.
 
