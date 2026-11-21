@@ -356,8 +356,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p archives
-          gh release download "$TAG" --dir archives --clobber \
-            --pattern 't3-*.tar.gz' --pattern 't3-*.zip'
+          gh release download "$TAG" --dir archives --clobber --pattern 't3-*'
           cd archives
           shopt -s nullglob
           archives=(t3-*)
@@ -483,9 +482,8 @@ jobs:
             cp "$work"/RPMS/*/t3-*.rpm packages/
           fi
 
-          if git clone --quiet --depth 1 --branch gh-pages "$remote" site 2>/dev/null; then
-            :
-          else
+          if ! git clone --quiet --depth 1 --branch gh-pages "$remote" site 2>/dev/null; then
+            rm -rf site
             mkdir site
             git -C site init --quiet --initial-branch=gh-pages
             git -C site remote add origin "$remote"
