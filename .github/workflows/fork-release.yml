@@ -184,6 +184,12 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
+      # Packing on a Linux host still compiles the Linux browser import helper.
+      - name: Install Linux build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libsecret-1-dev
+
       - name: Install cargo-xwin
         uses: taiki-e/install-action@v2
         with:
@@ -356,7 +362,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p archives
-          gh release download "$TAG" --dir archives --clobber --pattern 't3-*'
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir archives --clobber \
+            --pattern 't3-*'
           cd archives
           shopt -s nullglob
           archives=(t3-*)
@@ -366,7 +373,7 @@ jobs:
           fi
           sha256sum "${archives[@]}" > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "$TAG" SHA256SUMS --clobber
+          gh release upload "$TAG" SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
 
   android:
     name: Android APK
@@ -449,7 +456,7 @@ jobs:
 
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           mkdir -p packages
-          gh release download "$TAG" --dir packages --pattern '*.rpm' --clobber
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir packages --pattern '*.rpm' --clobber
 
           # electron-builder names the package after the product, so the release
           # ships t3-code. A meta package is what makes `dnf install t3` work.
