@@ -1,10 +1,10 @@
 # Fork changes
 
 `customized` is this fork's branch and upstream is `pingdotgg/t3code`. The difference
-is not a patch file: an agent merges `upstream/main` and has to keep the intent below,
-so this page is the inventory a merge resolves against. Keep it current when the fork
-gains or drops a change — a merge that cannot find a change here treats it as upstream's
-and can drop it.
+is not a patch file: an agent merges upstream's newest nightly tag and has to keep the
+intent below, so this page is the inventory a merge resolves against. Keep it current
+when the fork gains or drops a change — a merge that cannot find a change here treats it
+as upstream's and can drop it.
 
 ## What the branch adds
 
@@ -57,13 +57,15 @@ upstream's shape and the fork's behavior:
 
 ## Mirroring `main`
 
-`main` stays an exact mirror of `upstream/main` and never carries a commit of ours, so
-pushing it is a fast-forward. GitHub runs a push's workflows from the pushed tree, so the
-upstream workflows are switched off through the API before any push and any run that
-started anyway is cancelled. They exist on both branches, so a sync only needs to disable
-a workflow upstream newly adds. `gh` resolves this repository to its parent, so every
-call passes `-R 657kbps/t3code`. `Fork release` is the one workflow that stays enabled;
-check that it still is after the sweep, since a disabled one cannot be dispatched.
+Mirroring is housekeeping, not the sync: `customized` follows nightly tags, so `main` can
+sit ahead of it. `main` stays an exact mirror of `upstream/main` and never carries a
+commit of ours, so pushing it is a fast-forward. GitHub runs a push's workflows from the
+pushed tree, so the upstream workflows are switched off through the API before any push
+and any run that started anyway is cancelled. They exist on both branches, so a sync only
+needs to disable a workflow upstream newly adds. `gh` resolves this repository to its
+parent, so every call passes `-R 657kbps/t3code`. `Fork release` is the one workflow that
+stays enabled; check that it still is after the sweep, since a disabled one cannot be
+dispatched.
 
 ## Staying inside the checkout
 
