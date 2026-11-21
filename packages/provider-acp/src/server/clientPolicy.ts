@@ -9,6 +9,7 @@ export interface AcpRuntimePolicy {
   readonly cwd: string | null;
   readonly approvalPolicy?: unknown;
   readonly sandboxPolicy?: unknown;
+  readonly workspace?: { readonly extraRoots: ReadonlyArray<string> } | undefined;
 }
 
 export type AcpPermissionDisposition = "allow" | "ask" | "deny";
@@ -143,6 +144,7 @@ function acpWorkspaceWriteAllowsMutation(
     roots: [
       ...(runtimePolicy.cwd === null ? [] : [runtimePolicy.cwd]),
       ...(Array.isArray(sandboxPolicy.writableRoots) ? sandboxPolicy.writableRoots : []),
+      ...(runtimePolicy.workspace?.extraRoots ?? []),
     ],
     locations,
   });
