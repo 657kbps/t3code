@@ -76,185 +76,6 @@ jobs:
             --generate-notes
           git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null
 
-  # Linux and macOS build on their own hosts.
-  desktop:
-    name: Desktop ${{ matrix.key }}
-    needs: tag
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - key: linux-x64
-            os: ubuntu-24.04
-            platform: linux
-            target: rpm
-            arch: x64
-          - key: mac-arm64
-            os: macos-15
-            platform: mac
-            target: dmg
-            arch: arm64
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF: ${{ needs.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git init -q .
-          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$REF"
-          git checkout -q --force FETCH_HEAD
-
-      - name: Setup dependencies
-        uses: ./.github/actions/setup-ci-deps
-
-      # cargo ships with the hosted images; the build's own preflight reports
-      # anything else that is missing.
-      - name: Install Linux desktop build libraries
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 \
-            imagemagick rpm cpio
-          # Every Electron app ships the same Chromium binaries, so rpmbuild's
-          # /usr/lib/.build-id links are identical across apps and dnf refuses to
-          # install a second one. Nothing reads those links for an app bundle.
-          sudo install -d /etc/rpm
-          echo '%_build_id_links none' | sudo tee /etc/rpm/macros >/dev/null
-
-      - name: Build the installer
-        run: |
-          node scripts/build-desktop-artifact.ts \
-            --platform "${{ matrix.platform }}" \
-            --target "${{ matrix.target }}" \
-            --arch "${{ matrix.arch }}" \
-            --build-version "${{ needs.tag.outputs.version }}" \
-            --verbose
-
-      - name: Attach the artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          mkdir -p release-upload
-          shopt -s nullglob
-          for file in release/*.rpm release/*.dmg release/*.zip release/*.blockmap release/*.yml; do
-            # builder-debug.yml is electron-builder's config dump, not a feed.
-            [[ "$file" == "release/builder-debug.yml" ]] && continue
-            cp "$file" release-upload/
-          done
-          # A prerelease version makes electron-builder name the update feed
-          # after it (fork-mac.yml), but the installed app reports the "latest"
-          # channel and would look for a file this release lacks.
-          for file in release-upload/fork*.yml; do
-            mv "$file" "release-upload/latest${file#release-upload/fork}"
-          done
-          gh release upload "$TAG" release-upload/* --clobber
-
-  # Cross-compiled on Linux the way upstream does it: a Windows host compiles
-  # node-pty from source and unpacks more native files than the packaged payload
-  # guard allows, while the staged install resolves prebuilt win32 packages.
-  desktop-win:
-    name: Desktop win-x64
-    needs: [tag, cli]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF: ${{ needs.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git init -q .
-          token="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $token"
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 --no-tags --no-recurse-submodules origin "$REF"
-          git checkout -q --force FETCH_HEAD
-
-      - name: Setup dependencies
-        uses: ./.github/actions/setup-ci-deps
-
-      # Packing on a Linux host still compiles the Linux browser import helper.
-      - name: Install Linux build libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libsecret-1-dev
-
-      - name: Install cargo-xwin
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-xwin
-
-      - name: Build the resource monitor for Windows
-        run: |
-          set -euo pipefail
-          rustup target add x86_64-pc-windows-msvc
-          cargo xwin build --locked --release \
-            --manifest-path native/resource-monitor/Cargo.toml \
-            --target x86_64-pc-windows-msvc
-
-      # The Windows app runs the server inside WSL, so it embeds the same-arch
-      # Linux CLI archive the CLI job publishes.
-      - name: Fetch the WSL runtime
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          mkdir -p wsl-runtime
-          gh release download "$TAG" --dir wsl-runtime --pattern 't3-*-linux-x64.tar.gz'
-
-      - name: Build the installer
-        env:
-          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          archives=(wsl-runtime/*.tar.gz)
-          if [[ ${#archives[@]} -ne 1 ]]; then
-            echo "Expected one linux CLI archive, found ${#archives[@]}." >&2
-            exit 1
-          fi
-          node scripts/build-desktop-artifact.ts \
-            --platform win \
-            --target nsis \
-            --arch x64 \
-            --build-version "${{ needs.tag.outputs.version }}" \
-            --wsl-runtime "${archives[0]}" \
-            --verbose
-
-      - name: Attach the artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          mkdir -p release-upload
-          shopt -s nullglob
-          for file in release/*.exe release/*.blockmap release/*.yml; do
-            [[ "$file" == "release/builder-debug.yml" ]] && continue
-            cp "$file" release-upload/
-          done
-          for file in release-upload/fork*.yml; do
-            mv "$file" "release-upload/latest${file#release-upload/fork}"
-          done
-          gh release upload "$TAG" release-upload/* --clobber
-
   cli:
     name: CLI ${{ matrix.key }}
     needs: tag
@@ -304,7 +125,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsecret-1-dev pkg-config patchelf
 
+      # The archive takes only this binary from the crate, and the crate changes
+      # far less often than the app, so a stored binary skips the cargo build.
+      # Same key as the upstream release job, which builds the same artefact.
+      - name: Cache the resource monitor
+        id: resource_monitor
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor
+          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
       - name: Build the resource monitor
+        if: steps.resource_monitor.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           rustup target add "${{ matrix.rust_target }}"
@@ -410,6 +242,19 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
+      # prebuild deletes apps/mobile/android before regenerating it, so without
+      # this every release downloads the Gradle distribution and every
+      # dependency again. The wrapper is part of that download.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            wrapper
+          # No project exists yet, so there is no wrapper jar to validate.
+          validate-wrappers: false
 
       # apps/mobile/android is generated, never tracked, and expo resolves from
       # that package's node_modules/.bin rather than the workspace root.

@@ -1,7 +1,7 @@
 # T3 Code (personal fork)
 
 My own fork of [T3 Code](https://github.com/pingdotgg/t3code), a minimal GUI for coding
-agents. It exists so I can carry a few local modifications and build my own installers.
+agents. It exists so I can carry a few local modifications and cut my own releases.
 Nothing here is meant for anyone else.
 
 - Upstream project: <https://github.com/pingdotgg/t3code>
@@ -15,9 +15,10 @@ This fork keeps no CI. Every upstream workflow is deleted, and
 disabled, so a sync cannot start one. On dispatch it reads the version from the
 manifests, tags `v<version>-fork.<n>`, and attaches to a GitHub Release:
 
-- desktop installers for linux x64 (rpm), windows x64 (nsis) and macOS arm64 (dmg)
 - the `t3` CLI archives for linux x64 and macOS arm64, plus `SHA256SUMS` for `t3 update`
 - an Android APK for arm64-v8a
+
+It builds no desktop installers.
 
 Nothing runs on push, and no release ever writes a version number into a tracked file.
 
@@ -39,15 +40,6 @@ thread, then dispatches **Fork release**. To publish one yourself, run **Fork
 release** in the Actions tab.
 [docs/operations/fork-changes.md](docs/operations/fork-changes.md) is what a merge has
 to keep, and [AGENTS.md](AGENTS.md) explains why the version is never committed here.
-
-## Install on Fedora
-
-```bash
-sudo dnf install https://github.com/657kbps/t3code/releases/download/v0.1.11-fork.2/T3-Code-0.1.11-fork.2-x86_64.rpm
-```
-
-There is no package repository: GitHub refuses any file over 100 MB, and the rpm is
-163 MB.
 
 ## Install the CLI
 
