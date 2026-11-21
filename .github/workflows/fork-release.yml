@@ -117,7 +117,7 @@ jobs:
         uses: ./.github/actions/setup-ci-deps
 
       # cargo ships with the hosted images; the build's own preflight reports
-      # anything else that is missing. rpm is what the dnf repository serves.
+      # anything else that is missing.
       - name: Install Linux desktop build libraries
         if: matrix.platform == 'linux'
         run: |
@@ -125,6 +125,10 @@ jobs:
           sudo apt-get install -y \
             libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 \
             imagemagick rpm cpio
+          # Every Electron app ships the same Chromium binaries, so rpmbuild's
+          # /usr/lib/.build-id links are identical across apps and dnf refuses to
+          # install a second one. Nothing reads those links for an app bundle.
+          echo '%_build_id_links none' | sudo tee -a /etc/rpm/macros >/dev/null
 
       - name: Build the installer
         run: |

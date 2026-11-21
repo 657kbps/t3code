@@ -45,4 +45,22 @@ sudo dnf install https://github.com/657kbps/t3code/releases/download/v0.1.11-for
 ```
 
 There is no package repository: GitHub refuses any file over 100 MB, and the rpm is
-163 MB. `t3 update` reads this fork's releases, so the CLI updates itself from here.
+163 MB.
+
+## Install the CLI
+
+Each release carries a self-contained `t3` (no Node needed). `t3 install` only works
+from the runtime layout, so extract there first and let it write its own launcher:
+
+```bash
+version=0.1.11-fork.3
+mkdir -p ~/.t3/runtime/versions
+curl -fsSL -o /tmp/t3.tar.gz \
+  "https://github.com/657kbps/t3code/releases/download/v$version/t3-$version-linux-x64.tar.gz"
+tar -xzf /tmp/t3.tar.gz -C ~/.t3/runtime/versions
+mv ~/.t3/runtime/versions/t3-$version-linux-x64 ~/.t3/runtime/versions/$version
+~/.t3/runtime/versions/$version/t3 install
+```
+
+On macOS arm64 the archive is `t3-$version-darwin-arm64.tar.gz`. That puts `t3` in
+`~/.local/bin`, and `t3 update` then moves you to the next release of this fork.
