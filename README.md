@@ -21,29 +21,29 @@ Release:
 
 Nothing runs on push, and no release ever writes a version number into a tracked file.
 
+## Branches
+
+- `main` mirrors upstream `main` and carries nothing of ours.
+- `customized` (default) is where this fork lives, and where releases are cut from.
+
 ## Sync and release
 
 ```bash
+git switch customized
 ./scripts/fork-sync-upstream.sh
 ```
 
-Merges `upstream/main`, keeping this fork's deletions deleted. Then run **Fork release**
-in the Actions tab. [AGENTS.md](AGENTS.md) explains both, why the version is never
-committed here, and which local patches upstream edits will conflict with.
+Fast-forwards `main` to upstream, then merges `upstream/main` into `customized`
+keeping this fork's deletions deleted. Then run **Fork release** in the Actions tab.
+[AGENTS.md](AGENTS.md) explains both, why the version is never committed here, and
+which local patch upstream edits will conflict with.
 
 ## Install on Fedora
 
-The rpm is served from a dnf repository built from the release:
-
 ```bash
-sudo tee /etc/yum.repos.d/t3code.repo >/dev/null <<'EOF'
-[t3code]
-name=T3 Code (personal fork)
-baseurl=https://657kbps.github.io/t3code/
-enabled=1
-gpgcheck=0
-EOF
-sudo dnf install t3
+sudo dnf install https://github.com/657kbps/t3code/releases/download/v0.1.11-fork.2/T3-Code-0.1.11-fork.2-x86_64.rpm
 ```
 
-`t3 update` reads this fork's releases, so the CLI updates itself from here.
+`dnf install t3code` by name would need a repository, and GitHub refuses any file over
+100 MB, so hosting the 163 MB rpm needs object storage. `t3 update` reads this fork's
+releases, so the CLI updates itself from here.
