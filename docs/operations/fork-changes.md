@@ -20,6 +20,23 @@ and can drop it.
   `CLI_RELEASE_REPOSITORY` at `657kbps/t3code`, and `apps/server/src/cli/update.test.ts`
   asserts the same URL.
 
+## Temporary fixes for upstream bugs
+
+A fix here exists only until upstream lands its own. When a sync finds upstream's fix,
+take upstream's code for the whole change and delete the fork's version and this entry;
+never re-apply the fork's code on top of it. If upstream has no fix yet, keep this one.
+
+- **Stopping the macOS launch agent** — upstream
+  [#11995](https://github.com/pingdotgg/t3code/issues/11995), fix
+  [PR #26088](https://github.com/pingdotgg/t3code/pull/26088). macOS 15 rejects
+  `launchctl bootout --wait` with a usage error (exit 64) and stops nothing, so the old job
+  kept the label and the following `bootstrap` failed with EIO (exit 5); `t3 update`,
+  `t3 service install` and `t3 service restart` all failed and left the old service
+  running. `apps/server/src/cloud/bootService.ts` boots the agent out with a plain
+  `launchctl bootout` and polls `launchctl print` until the label is gone, within the stop
+  timeout. The launchd tests in `apps/server/src/cloud/bootService.test.ts` model those
+  exit codes. When upstream merges its fix, take upstream's `bootService.ts` and tests.
+
 ## Where it meets upstream
 
 Registering a provider touches shared files, so a sync conflicts there. Each seam keeps
