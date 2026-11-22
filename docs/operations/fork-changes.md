@@ -13,7 +13,9 @@ and can drop it.
   provider, so every file under it is ours.
 - **Fork releases** (`.github/workflows/fork-release.yml`), dispatch-only, tagging
   `v<manifest version>-fork.<n>` from the manifests plus this fork's tags. It never runs
-  on push and never writes a version into a tracked file.
+  on push and never writes a version into a tracked file. The Android APK takes the
+  release version as its `versionName` and its fork tag count as `versionCode`, so it is
+  told apart on the device and installs over the previous build.
 - **`t3 update` reads this fork's releases**: `packages/shared/src/cliRelease.ts` points
   `CLI_RELEASE_REPOSITORY` at `657kbps/t3code`, and `apps/server/src/cli/update.test.ts`
   asserts the same URL.

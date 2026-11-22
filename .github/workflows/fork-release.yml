@@ -24,6 +24,8 @@ jobs:
     outputs:
       version: ${{ steps.next.outputs.version }}
       tag: ${{ steps.next.outputs.tag }}
+      # Counted after the tag exists, so it only ever grows and no base bump resets it.
+      version_code: ${{ steps.release.outputs.version_code }}
     steps:
       # actions/checkout enumerates submodules and dies here: the tree carries
       # gitlinks under .repos/alchemy-effect/submodules with no root .gitmodules.
@@ -55,7 +57,8 @@ jobs:
           echo "version=${base}-fork.${next}" >> "$GITHUB_OUTPUT"
           echo "tag=v${base}-fork.${next}" >> "$GITHUB_OUTPUT"
 
-      - name: Create the tag and release
+      - id: release
+        name: Create the tag and release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.next.outputs.tag }}
@@ -68,13 +71,22 @@ jobs:
           # enough to leave the tag uncreated.
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "$TAG already exists; reusing it."
-            exit 0
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "T3 Code $VERSION" \
+              --generate-notes
           fi
-          gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "T3 Code $VERSION" \
-            --generate-notes
           git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null
+
+          # One fork release adds exactly one fork tag, so the count is this
+          # build's versionCode. The Android job stamps it into the APK.
+          code="$(git ls-remote --tags --refs origin 'refs/tags/v*-fork.*' | wc -l)"
+          if (( code < 1 )); then
+            echo "No fork tag was found after creating $TAG." >&2
+            exit 1
+          fi
+          echo "version_code=${code}" >> "$GITHUB_OUTPUT"
 
   cli:
     name: CLI ${{ matrix.key }}
@@ -220,6 +232,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+      VERSION_CODE: ${{ needs.tag.outputs.version_code }}
     steps:
       - name: Checkout
         env:
@@ -257,20 +272,38 @@ jobs:
           validate-wrappers: false
 
       # apps/mobile/android is generated, never tracked, and expo resolves from
-      # that package's node_modules/.bin rather than the workspace root.
+      # that package's node_modules/.bin rather than the workspace root. The app
+      # version is the store train's, so the release passes its own.
       - name: Prebuild the native project
         working-directory: apps/mobile
+        env:
+          T3CODE_MOBILE_VERSION: ${{ needs.tag.outputs.version }}
         run: vp exec expo prebuild --clean --platform android --no-install
+
+      # Expo writes versionCode as a literal from the app config, which the fork
+      # never sets, so every build would otherwise be 1. Patch the generated
+      # project and fail here rather than publish an unversioned APK.
+      - name: Stamp the version code
+        working-directory: apps/mobile/android
+        run: |
+          set -euo pipefail
+          matches="$(grep -cE '^[[:space:]]*versionCode [0-9]+[[:space:]]*$' app/build.gradle || true)"
+          if [[ "$matches" != 1 ]]; then
+            echo "Expected one versionCode line in app/build.gradle, found ${matches}." >&2
+            exit 1
+          fi
+          sed -i -E "s/^([[:space:]]*)versionCode [0-9]+[[:space:]]*$/\1versionCode ${VERSION_CODE}/" app/build.gradle
+          grep -qE "^[[:space:]]*versionCode ${VERSION_CODE}[[:space:]]*$" app/build.gradle
+          grep -Fq "versionName \"${VERSION}\"" app/build.gradle
 
       - name: Build the release APK
         working-directory: apps/mobile/android
         run: ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
 
-      - name: Attach the APK
+      - name: Verify and attach the APK
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.tag.outputs.tag }}
-          VERSION: ${{ needs.tag.outputs.version }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -280,6 +313,19 @@ jobs:
             ls -R apps/mobile/android/app/build/outputs >&2 || true
             exit 1
           fi
+
+          # The APK is where the stamped version becomes observable: About reads
+          # it back, and the installer compares it, so refuse to publish a mismatch.
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          aapt="$(find "$sdk/build-tools" -maxdepth 2 -name aapt -type f | sort -V | tail -1)"
+          badging="$("$aapt" dump badging "${apks[0]}")"
+          badging="${badging%%$'\n'*}"
+          if [[ "$badging" != *"versionCode='$VERSION_CODE'"* ]] ||
+            [[ "$badging" != *"versionName='$VERSION'"* ]]; then
+            echo "APK version does not match the release: $badging" >&2
+            exit 1
+          fi
+
           mkdir -p release-apk
           cp "${apks[0]}" "release-apk/T3-Code-${VERSION}-arm64-v8a.apk"
           gh release upload "$TAG" release-apk/* --clobber
