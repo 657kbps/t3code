@@ -19,6 +19,11 @@ and can drop it.
 - **`t3 update` reads this fork's releases**: `packages/shared/src/cliRelease.ts` points
   `CLI_RELEASE_REPOSITORY` at `657kbps/t3code`, and `apps/server/src/cli/update.test.ts`
   asserts the same URL.
+- **Mobile APK updates** (`apps/mobile/src/features/updates/`): Android builds made by
+  `fork-release.yml` check this fork's releases from **Settings → About → Updates**,
+  download `T3-Code-<version>-arm64-v8a.apk`, and open the Android installer. The workflow
+  sets `T3CODE_MOBILE_APK_UPDATES=1`, which adds `REQUEST_INSTALL_PACKAGES` and the About
+  section; store builds keep both out.
 
 ## Temporary fixes for upstream bugs
 

@@ -5,18 +5,20 @@ import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useRef, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useDeadlinePassed } from "../../lib/clock";
+import { supportsApkUpdates } from "../updates/app-release";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
   registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
+import { AppUpdatesSection } from "./AppUpdatesSection";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -24,6 +26,8 @@ import { SettingsScreen } from "./components/SettingsScreen";
 export function SettingsAboutRouteScreen() {
   const gt = useGT();
   const insets = useSafeAreaInsets();
+  const installedVersion =
+    Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "0.0.0";
 
   return (
     <SettingsScreen title={gt("About")}>
@@ -35,6 +39,9 @@ export function SettingsAboutRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         <AppSettingsSection />
+        {supportsApkUpdates(Platform.OS, Constants.expoConfig?.extra?.apkUpdates) ? (
+          <AppUpdatesSection currentVersion={installedVersion} />
+        ) : null}
       </ScrollView>
     </SettingsScreen>
   );

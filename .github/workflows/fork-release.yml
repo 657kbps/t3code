@@ -235,6 +235,10 @@ jobs:
     env:
       VERSION: ${{ needs.tag.outputs.version }}
       VERSION_CODE: ${{ needs.tag.outputs.version_code }}
+      # Prebuild stamps versionName and Gradle embeds the app config separately, so both
+      # resolve the release version and the updater flag from the same job environment.
+      T3CODE_MOBILE_VERSION: ${{ needs.tag.outputs.version }}
+      T3CODE_MOBILE_APK_UPDATES: "1"
     steps:
       - name: Checkout
         env:
@@ -276,8 +280,6 @@ jobs:
       # version is the store train's, so the release passes its own.
       - name: Prebuild the native project
         working-directory: apps/mobile
-        env:
-          T3CODE_MOBILE_VERSION: ${{ needs.tag.outputs.version }}
         run: vp exec expo prebuild --clean --platform android --no-install
 
       # Expo writes versionCode as a literal from the app config, which the fork
@@ -323,6 +325,13 @@ jobs:
           if [[ "$badging" != *"versionCode='$VERSION_CODE'"* ]] ||
             [[ "$badging" != *"versionName='$VERSION'"* ]]; then
             echo "APK version does not match the release: $badging" >&2
+            exit 1
+          fi
+
+          # About only shows the updater in a build that asked for this permission.
+          if ! "$aapt" dump permissions "${apks[0]}" |
+            grep -q "android.permission.REQUEST_INSTALL_PACKAGES"; then
+            echo "The release APK cannot install its own updates." >&2
             exit 1
           fi
 

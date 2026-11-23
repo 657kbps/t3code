@@ -6,7 +6,10 @@ import assetLinks from "../web/public/.well-known/assetlinks.json";
 
 // Keep config parsing independent of local env files and build credentials.
 vi.mock("../../scripts/lib/public-config.ts", () => ({
-  loadRepoEnv: () => ({ APP_VARIANT: process.env.APP_VARIANT }),
+  loadRepoEnv: () => ({
+    APP_VARIANT: process.env.APP_VARIANT,
+    T3CODE_MOBILE_APK_UPDATES: process.env.T3CODE_MOBILE_APK_UPDATES,
+  }),
 }));
 
 afterEach(() => {
@@ -44,4 +47,18 @@ it.each([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
   expect(assetLinks.map((link) => link.target.package_name)).toContain(identifier);
+});
+
+it("adds the APK installer only when APK updates are enabled", async () => {
+  vi.stubEnv("T3CODE_MOBILE_APK_UPDATES", "1");
+  const enabled = await loadConfig("production");
+  expect(enabled.android?.permissions).toContain("android.permission.REQUEST_INSTALL_PACKAGES");
+  expect(enabled.extra?.apkUpdates).toBe(true);
+
+  vi.unstubAllEnvs();
+  const disabled = await loadConfig("production");
+  expect(disabled.android?.permissions ?? []).not.toContain(
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+  );
+  expect(disabled.extra?.apkUpdates).toBe(false);
 });

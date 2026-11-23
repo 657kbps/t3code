@@ -212,3 +212,9 @@ download updates in the background and apply them when you next leave the app.
 It saves drafts and queued messages before restarting. If you keep the app open
 for a long time, it may ask to install immediately; choosing **Later** leaves the
 update queued for the next suitable moment.
+
+Android builds installed from a GitHub release can update in place from that
+release. Open **Settings → About → Updates** and choose **Check for updates**.
+T3 Code downloads the release APK and opens the Android installer. Android asks
+you to allow T3 Code to install unknown apps the first time. This section appears
+only in Android builds distributed through GitHub releases, not in store builds.
