@@ -67,7 +67,9 @@ upstream's shape and the fork's behavior:
   stay; where both changed one key, this fork's text wins.
 - **Workspace wiring** — the `packages/provider-sparrow` entries in `package.json`,
   `apps/server/package.json`, `packages/client-runtime/package.json` and `pnpm-lock.yaml`.
-  A lockfile conflict takes upstream's file, then `vp i` relinks the fork's package.
+  A lockfile conflict takes upstream's file, then `vp i` relinks the fork's package. A merge that
+  resolved the lockfile by itself can still leave pnpm's "Broken lockfile" error; it takes the
+  same recovery.
 - **Workflows** — `customized` keeps upstream's `.github/workflows/*.yml` so a
   sync merges them instead of reporting a modify/delete conflict for each one.
   They are disabled through the GitHub API, not deleted; only
