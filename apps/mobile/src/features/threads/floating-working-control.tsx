@@ -27,7 +27,10 @@ import type { FloatingStatusAction, FloatingWorkingStatus } from "./floating-wor
 import { ShimmeringWorkContent } from "./thread-work-log";
 
 const CONTROL_HEIGHT = 38.5;
-const CONTROL_GAP = 8;
+// Clear space between the pill row and the composer capsule. The capsule starts
+// COMPOSER_CAPSULE_INSET below its overlay's top edge, so the row sits that much
+// higher to keep the whole gap visible.
+const CONTROL_GAP = 14;
 const COMPOSER_CAPSULE_INSET = 6;
 const GLASS_MERGE_SPACING = 12;
 const CONTROL_ENTERING = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
