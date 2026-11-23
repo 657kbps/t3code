@@ -27,7 +27,9 @@ import type { FloatingStatusAction, FloatingWorkingStatus } from "./floating-wor
 import { ShimmeringWorkContent } from "./thread-work-log";
 
 const CONTROL_HEIGHT = 38.5;
-const CONTROL_GAP = 8;
+// The composer capsule starts COMPOSER_CAPSULE_INSET below its overlay's top edge, so
+// the offset subtracts that inset to leave this much clear space above the capsule.
+const CONTROL_GAP = 12;
 const COMPOSER_CAPSULE_INSET = 6;
 const GLASS_MERGE_SPACING = 12;
 const CONTROL_ENTERING = FadeIn.duration(180).reduceMotion(ReduceMotion.System);

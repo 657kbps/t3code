@@ -50,12 +50,18 @@ export function ControlPill(props: {
 
   const isCircle =
     variant === "circle" || variant === "danger" || (variant === "primary" && !props.label);
+  // twMerge keeps a platform-prefixed default beside a caller's unprefixed size, so the
+  // defaults step aside for each axis the caller sets itself.
+  const setsHeight = /(^|\s)(?:[a-z]+:)*h-/.test(props.className ?? "");
+  const setsWidth = /(^|\s)(?:[a-z]+:)*w-/.test(props.className ?? "");
   const containerClassName = cn(
     isCircle
-      ? "h-[44px] w-[44px] items-center justify-center rounded-full android:h-[48px] android:w-[48px]"
+      ? "items-center justify-center rounded-full"
       : variant === "primary"
-        ? "h-[44px] flex-row items-center justify-center gap-2 rounded-full px-5 android:h-[48px]"
-        : "h-[44px] flex-row items-center justify-center gap-2 rounded-full px-3.5 android:h-[48px]",
+        ? "flex-row items-center justify-center gap-2 rounded-full px-5"
+        : "flex-row items-center justify-center gap-2 rounded-full px-3.5",
+    !setsHeight && "h-[44px] android:h-[48px]",
+    isCircle && !setsWidth && "w-[44px] android:w-[48px]",
     variant === "primary"
       ? props.disabled
         ? "bg-subtle-strong"
