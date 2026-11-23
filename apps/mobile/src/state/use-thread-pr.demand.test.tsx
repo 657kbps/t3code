@@ -164,9 +164,17 @@ const setup = Effect.fn("TestThreadPr.setup")(function* () {
   const container = document.createElement("div");
   const root = createRoot(container);
   let mounts = 0;
-  function Row({ value, name }: { value: EnvironmentThreadShell; name: string }) {
+  function Row({
+    value,
+    name,
+    enabled,
+  }: {
+    value: EnvironmentThreadShell;
+    name: string;
+    enabled?: boolean;
+  }) {
     const [passive] = useState(() => ++mounts);
-    const pr = useThreadPr(value);
+    const pr = useThreadPr(value, enabled === undefined ? undefined : { enabled });
     return (
       <output data-name={name} data-passive={passive}>
         {pr?.accessibilityLabel ?? "none"}
@@ -200,11 +208,13 @@ const setup = Effect.fn("TestThreadPr.setup")(function* () {
       visible = true,
       value = thread(),
       shared = false,
+      enabled,
       activity = "visible",
     }: {
       visible?: boolean;
       value?: EnvironmentThreadShell;
       shared?: boolean;
+      enabled?: boolean;
       activity?: "visible" | "hidden";
     } = {}) {
       await act(async () =>
@@ -213,7 +223,7 @@ const setup = Effect.fn("TestThreadPr.setup")(function* () {
             <Activity mode={activity}>
               <div hidden={!visible} style={{ width: 320 }}>
                 <ThreadPrDemandProvider visible={visible}>
-                  <Row value={value} name="sidebar" />
+                  <Row value={value} name="sidebar" enabled={enabled} />
                 </ThreadPrDemandProvider>
               </div>
             </Activity>
@@ -340,6 +350,22 @@ it.effect("keeps mounted passive state through an Android-style Activity tab swi
       expect(h.passive()).toBe(passive);
       expect(h.mounts).toBe(1);
       expect(h.requests.length - before).toBe(1);
+    });
+  }),
+);
+
+it.effect("a dormant row starts no summary query until it is enabled", () =>
+  Effect.gen(function* () {
+    using h = yield* setup();
+    yield* Effect.promise(async () => {
+      await h.render({ enabled: false });
+      await h.advance(180_000);
+      expect(h.requests).toHaveLength(0);
+      expect(h.badge()).toBe("none");
+      await h.render({ enabled: true });
+      expect(h.requests).toHaveLength(1);
+      expect(h.badge()).toBe("#12 pull request open");
+      expect(h.mounts).toBe(1);
     });
   }),
 );
