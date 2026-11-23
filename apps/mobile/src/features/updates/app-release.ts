@@ -1,4 +1,8 @@
-import { cliReleaseAssetUrl, cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
+import {
+  CLI_RELEASES_PAGE_URL,
+  cliReleaseAssetUrl,
+  cliReleaseChannelOf,
+} from "@t3tools/shared/cliRelease";
 import { msg } from "gt-react-native";
 
 import { m } from "../../i18n/messages";
@@ -17,6 +21,17 @@ export interface AppReleaseUpdate {
   readonly version: string;
   readonly fileName: string;
   readonly downloadUrl: string;
+}
+
+export interface AppReleaseDownloadProgress {
+  readonly fraction: number;
+  readonly bytesWritten?: number;
+  readonly totalBytes?: number;
+}
+
+/** GitHub release page for a fork version tag. */
+export function appReleasePageUrl(version: string): string {
+  return `${CLI_RELEASES_PAGE_URL}/tag/v${encodeURIComponent(version)}`;
 }
 
 /** The asset fork-release.yml attaches for Android phones. */
@@ -39,7 +54,7 @@ export async function findAppReleaseUpdate(
 export async function downloadAppRelease(input: {
   readonly release: AppReleaseUpdate;
   readonly signal: AbortSignal;
-  readonly onProgress?: (progress: { readonly fraction: number }) => void;
+  readonly onProgress?: (progress: AppReleaseDownloadProgress) => void;
 }): Promise<string> {
   const { Directory, File, Paths } = await import("expo-file-system");
   const directory = new Directory(Paths.cache, APP_UPDATE_DIRECTORY);
@@ -60,16 +75,18 @@ export async function downloadAppRelease(input: {
 
   const file = new File(directory, input.release.fileName);
   let lastFraction = -1;
+  let lastTotalBytes: number | undefined;
   try {
     await File.downloadFileAsync(input.release.downloadUrl, file, {
       idempotent: true,
       signal: input.signal,
       onProgress: ({ bytesWritten, totalBytes }) => {
         if (totalBytes <= 0) return;
+        lastTotalBytes = totalBytes;
         const fraction = Math.min(1, bytesWritten / totalBytes);
-        if (fraction - lastFraction < 0.01) return;
+        if (fraction - lastFraction < 0.01 && bytesWritten < totalBytes) return;
         lastFraction = fraction;
-        input.onProgress?.({ fraction });
+        input.onProgress?.({ fraction, bytesWritten, totalBytes });
       },
     });
   } catch (cause) {
@@ -81,7 +98,12 @@ export async function downloadAppRelease(input: {
     if (input.signal.aborted) throw cause;
     throw new Error(m(msg("Could not download the update.")), { cause });
   }
-  input.onProgress?.({ fraction: 1 });
+  input.onProgress?.({
+    fraction: 1,
+    ...(lastTotalBytes === undefined
+      ? {}
+      : { bytesWritten: lastTotalBytes, totalBytes: lastTotalBytes }),
+  });
   return file.uri;
 }
 

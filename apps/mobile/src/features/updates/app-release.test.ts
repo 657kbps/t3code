@@ -1,7 +1,12 @@
 import { CLI_RELEASES_PAGE_URL, CLI_RELEASE_REPOSITORY } from "@t3tools/shared/cliRelease";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { supportsApkUpdates, appReleaseApkFileName, findAppReleaseUpdate } from "./app-release";
+import {
+  supportsApkUpdates,
+  appReleaseApkFileName,
+  appReleasePageUrl,
+  findAppReleaseUpdate,
+} from "./app-release";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -56,6 +61,10 @@ describe("findAppReleaseUpdate", () => {
 
   it("names the Android asset the release workflow uploads", () => {
     expect(appReleaseApkFileName("0.1.11-fork.9")).toBe("T3-Code-0.1.11-fork.9-arm64-v8a.apk");
+  });
+
+  it("links to the GitHub release tag page for a version", () => {
+    expect(appReleasePageUrl("0.1.11-fork.9")).toBe(`${CLI_RELEASES_PAGE_URL}/tag/v0.1.11-fork.9`);
   });
 
   it("only offers APK updates to Android builds that opt in", () => {

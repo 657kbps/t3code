@@ -67,4 +67,58 @@ describe("AppReleaseController", () => {
       uri: "file:///cache/t3-app-updates/update.apk",
     });
   });
+
+  it("forwards byte progress and cancels back to available without blocking a retry", async () => {
+    const { controller, states } = makeController();
+    let rejectFirst!: (reason?: unknown) => void;
+    releaseMocks.download.mockImplementationOnce(
+      ({ onProgress, signal }: { onProgress?: (p: unknown) => void; signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+          onProgress?.({ fraction: 0.5, bytesWritten: 512, totalBytes: 1024 });
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+
+    const firstDownload = controller.downloadAndInstall(update);
+    expect(states.at(-1)).toEqual({
+      status: "downloading",
+      update,
+      fraction: 0.5,
+      bytesWritten: 512,
+      totalBytes: 1024,
+    });
+
+    controller.cancelDownload(update);
+    expect(states.at(-1)).toEqual({ status: "available", update });
+
+    releaseMocks.download.mockResolvedValueOnce("file:///cache/t3-app-updates/update.apk");
+    releaseMocks.install.mockResolvedValueOnce(undefined);
+    await controller.downloadAndInstall(update);
+    await firstDownload.catch(() => rejectFirst());
+
+    expect(states.at(-1)).toEqual({
+      status: "ready",
+      update,
+      uri: "file:///cache/t3-app-updates/update.apk",
+    });
+  });
+
+  it("allows a fresh check after dispose aborts an in-flight check", async () => {
+    const { controller, states } = makeController();
+    releaseMocks.find.mockImplementationOnce(
+      (_version: string, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+
+    const initialCheck = controller.check("0.1.11-fork.8");
+    controller.dispose();
+    await initialCheck;
+
+    releaseMocks.find.mockResolvedValueOnce(null);
+    await controller.check("0.1.11-fork.8");
+    expect(states.at(-1)).toEqual({ status: "current" });
+  });
 });
