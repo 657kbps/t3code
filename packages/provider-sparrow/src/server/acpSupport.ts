@@ -87,8 +87,7 @@ export const SPARROW_RUNTIME_MODES: ReadonlyArray<ServerProviderRuntimeMode> = [
   {
     mode: "workspace-write",
     label: "Workspace write",
-    description:
-      "Auto-approve workspace edits, shell, and MCP tools; ask for outside-workspace and escalated actions.",
+    description: "Auto-approve workspace edits, shell, and MCP tools; ask for anything else.",
     icon: "shield-check",
   },
   {
