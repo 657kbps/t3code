@@ -856,8 +856,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         showBadge: providerInstance.showBadge,
       })
     : null;
-  // Dormant rows wake with swipe activation; their reads would all start in the mounting commit.
-  const pr = useThreadPr(thread, { enabled: !dormant });
+  const pr = useThreadPr(thread);
   const prBadgeLabel = pr ? resolveThreadPrBadgeAction(pr, m).accessibilityLabel : null;
   const handleOpenPullRequests = useCallback(() => {
     if (pr) onOpenThreadPullRequests(thread, pr);

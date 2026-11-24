@@ -78,11 +78,8 @@ export function withKnownPullRequestSummary<
   return initialSummary === undefined ? params : { ...params, initialSummary };
 }
 
-export function useThreadPr(
-  thread: EnvironmentThreadShell,
-  options?: { readonly enabled?: boolean },
-): ThreadPrPresentation | null {
-  const demand = use(ThreadPrDemandContext) && options?.enabled !== false;
+export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentation | null {
+  const demand = use(ThreadPrDemandContext);
   const resolve = useMessages();
   const supportsLinks = useAtomValue(
     serverEnvironment.configValueAtom(thread.environmentId),

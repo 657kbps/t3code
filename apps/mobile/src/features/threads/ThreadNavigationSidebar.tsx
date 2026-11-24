@@ -13,10 +13,7 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
-import {
-  threadListShelfExpansionKey,
-  useThreadListShelfLayoutAnimation,
-} from "./threadListAnimations";
+import { THREAD_LIST_ROW_LAYOUT } from "./threadListAnimations";
 import { useAtomValue } from "@effect/atom-react";
 import { useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
@@ -258,13 +255,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
-  const shelfLayoutAnimation = useThreadListShelfLayoutAnimation(
-    threadListShelfExpansionKey({
-      workingShelfExpanded,
-      snoozedShelfExpanded,
-      settledShelfExpanded,
-    }),
-  );
   const now = useThreadListNow(threads);
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
   const {
@@ -626,7 +616,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             <GestureDetector gesture={sidebarScrollGesture}>
               <AnimatedLegendList
                 renderScrollComponent={NativeScrollView}
-                itemLayoutAnimation={shelfLayoutAnimation}
+                itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}
                 data={listItems}
                 drawDistance={500}
                 estimatedItemSize={64}
@@ -683,7 +673,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             <GestureDetector gesture={sidebarScrollGesture}>
               {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- The Android sidebar has no native header to register with. */}
               <AnimatedLegendList
-                itemLayoutAnimation={shelfLayoutAnimation}
+                itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}
                 data={listItems}
                 drawDistance={500}
                 estimatedItemSize={64}
