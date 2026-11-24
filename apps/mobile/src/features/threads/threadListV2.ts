@@ -42,7 +42,7 @@ import type { ThreadMoveAvailability } from "./threadOrder";
 
 import { relativeTime } from "../../lib/time";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
-import { m, type MessageResolver } from "../../i18n/messages";
+import { getActiveLocale, m, type MessageResolver } from "../../i18n/messages";
 
 import {
   applyPendingThreadOrder,
@@ -79,6 +79,34 @@ export type ThreadListV2Status =
   | "ready";
 export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze";
 
+const EMPTY_SNOOZE_PRESETS: ReadonlyArray<SnoozePreset> = [];
+const SNOOZE_PRESET_CACHE_LIMIT = 8;
+const SNOOZE_PRESET_FORMAT_KEY_RECHECK_MS = 1_000;
+let snoozePresetFormatKey = "";
+let snoozePresetFormatKeyCheckedAt = 0;
+const snoozePresetCache: Array<{
+  readonly now: string;
+  readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
+  readonly locale: string;
+  readonly formatKey: string;
+  readonly resolve: MessageResolver;
+  readonly result: ReadonlyArray<SnoozePreset>;
+}> = [];
+
+// Locale and hour cycle matter as much as the zone: a 12/24-hour switch must not reuse labels.
+function currentSnoozePresetFormatKey(): string {
+  const now = Date.now();
+  if (
+    snoozePresetFormatKey === "" ||
+    Math.abs(now - snoozePresetFormatKeyCheckedAt) >= SNOOZE_PRESET_FORMAT_KEY_RECHECK_MS
+  ) {
+    snoozePresetFormatKeyCheckedAt = now;
+    const options = Intl.DateTimeFormat().resolvedOptions();
+    snoozePresetFormatKey = `${options.timeZone}|${options.locale}|${options.hourCycle ?? ""}`;
+  }
+  return snoozePresetFormatKey;
+}
+
 /**
  * Presets for a row's snooze menu, read at the list's minute instead of the
  * clock: the compiler keys a row's memo on its inputs, so a clock read inside
@@ -92,9 +120,31 @@ export function resolveThreadListV2SnoozePresets(
   },
   resolve: MessageResolver = m,
 ): ReadonlyArray<SnoozePreset> {
-  return input.secondary === "snooze"
-    ? resolveSnoozePresets(new Date(input.now), presetOptions(input.presets), resolve)
-    : [];
+  if (input.secondary !== "snooze") return EMPTY_SNOOZE_PRESETS;
+  const locale = getActiveLocale();
+  const formatKey = currentSnoozePresetFormatKey();
+  const cached = snoozePresetCache.find(
+    (entry) =>
+      entry.now === input.now &&
+      entry.presets === input.presets &&
+      entry.locale === locale &&
+      entry.formatKey === formatKey &&
+      entry.resolve === resolve,
+  );
+  if (cached !== undefined) return cached.result;
+  const result = resolveSnoozePresets(new Date(input.now), presetOptions(input.presets), resolve);
+  if (snoozePresetCache.length >= SNOOZE_PRESET_CACHE_LIMIT) {
+    snoozePresetCache.shift();
+  }
+  snoozePresetCache.push({
+    now: input.now,
+    presets: input.presets,
+    locale,
+    formatKey,
+    resolve,
+    result,
+  });
+  return result;
 }
 
 function presetOptions(presets: ReadonlyArray<SnoozePresetSetting> | undefined) {
@@ -481,12 +531,21 @@ export interface ThreadListV2SettledShelfListItem {
   readonly disabled: boolean;
 }
 
+export interface ThreadListV2ShowMoreListItem {
+  readonly type: "v2-show-more";
+  readonly key: "v2-show-more";
+  readonly hiddenCount: number;
+  readonly state?: "loading" | "failed";
+}
+
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
+
+export type ThreadListV2DisplayListItem = ThreadListV2ListItem | ThreadListV2ShowMoreListItem;
 
 export function isThreadListV2ListItem(value: {
   readonly type: string;
@@ -498,6 +557,51 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
   );
+}
+
+/** Separate card and slim item types so LegendList estimates settled rows from slim heights, not cards. */
+export function getThreadListV2DisplayItemType(item: ThreadListV2DisplayListItem): string {
+  return item.type === "v2-thread" ? `${item.type}:${item.item.variant}` : item.type;
+}
+
+export function appendThreadListV2ShowMoreItem(
+  items: readonly ThreadListV2ListItem[],
+  options: {
+    readonly settledShelfExpanded: boolean;
+    readonly hiddenSettledCount: number;
+    readonly loading: boolean;
+    readonly failed: boolean;
+  },
+): readonly ThreadListV2DisplayListItem[] {
+  if (!options.settledShelfExpanded || options.hiddenSettledCount <= 0) {
+    return items;
+  }
+  return [
+    ...items,
+    {
+      type: "v2-show-more",
+      key: "v2-show-more",
+      hiddenCount: options.hiddenSettledCount,
+      ...(options.loading
+        ? { state: "loading" as const }
+        : options.failed
+          ? { state: "failed" as const }
+          : {}),
+    },
+  ];
+}
+
+export function threadListV2DisplayItemsAreEqual(
+  previous: ThreadListV2DisplayListItem,
+  item: ThreadListV2DisplayListItem,
+): boolean {
+  if (isThreadListV2ListItem(previous) && isThreadListV2ListItem(item)) {
+    return threadListV2ListItemsAreEqual(previous, item);
+  }
+  if (previous.type === "v2-show-more" && item.type === "v2-show-more") {
+    return previous.hiddenCount === item.hiddenCount && previous.state === item.state;
+  }
+  return false;
 }
 
 /** Compare rebuilt items by content so minute ticks and partition runs do not re-render every mounted row. */

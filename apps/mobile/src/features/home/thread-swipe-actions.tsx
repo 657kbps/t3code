@@ -73,6 +73,7 @@ interface ThreadSwipeAction {
   readonly destructive?: boolean;
   readonly menu?: {
     readonly actions: MenuAction[];
+    readonly resolveActions?: () => readonly MenuAction[];
     readonly onPressAction: NonNullable<ComponentProps<typeof Menu>["onPressAction"]>;
     readonly title?: string;
   };
@@ -279,6 +280,10 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
   const contentRef = useRef(content);
   const [isDismissing, setIsDismissing] = useState(false);
   const [collapsedInList, setCollapsedInList] = useState(false);
+  const [engagedContent, setEngagedContent] = useState<{
+    readonly resetKey: string | undefined;
+    readonly threadKey: string;
+  } | null>(null);
   const dismissing = useSharedValue(false);
   const rowHeight = useSharedValue(0);
   const rowWidth = useSharedValue(props.fullSwipeWidth);
@@ -458,17 +463,28 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
     [content],
   );
   const { dormant, onSwipeableWillOpen, backgroundColor, containerStyle } = props;
-  const handleWillOpen = useCallback(() => {
+  const actionsEngaged = !dormant && engagedContent === content;
+  const measuredRowHeightRef = useRef(0);
+  const [measuredRowHeight, setMeasuredRowHeight] = useState(0);
+  const engageActions = useCallback(() => {
+    if (dormant || engagedContent === content) return;
+    if (measuredRowHeightRef.current > 0) {
+      setMeasuredRowHeight(measuredRowHeightRef.current);
+    }
+    setEngagedContent(content);
+  }, [content, dormant, engagedContent]);
+  const handleStartSwipe = useCallback(() => {
+    engageActions();
     if (!dormant && !dismissalRef.current && swipeableRef.current) {
       onSwipeableWillOpen?.(swipeableRef.current);
     }
-  }, [dormant, onSwipeableWillOpen]);
+  }, [dormant, engageActions, onSwipeableWillOpen]);
+  const handleWillOpen = handleStartSwipe;
   const handleSwipeableClose = useCallback(() => {
     if (swipeableRef.current) onSwipeableClose?.(swipeableRef.current);
   }, [onSwipeableClose]);
   const { fontScale } = useWindowDimensions();
   const fullActionsHeight = fullActionStackHeight(useScaledTextRole("micro").lineHeight, fontScale);
-  const [measuredRowHeight, setMeasuredRowHeight] = useState(0);
   const compactActions =
     props.compactActions === true ||
     (measuredRowHeight > 0 && measuredRowHeight < fullActionsHeight);
@@ -483,6 +499,8 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
   ) => {
     const deps = [
       dormant,
+      actionsEngaged,
+      actionsWidth,
       translation,
       methods,
       actionStyle,
@@ -502,7 +520,14 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
     if (cached && deps.every((dep, index) => Object.is(dep, cached.deps[index]))) {
       return cached.element;
     }
-    const element = dormant ? null : (
+    const element = dormant ? null : !actionsEngaged ? (
+      <View
+        ref={() => {
+          activeTranslationRef.current = translation;
+        }}
+        style={{ width: actionsWidth }}
+      />
+    ) : (
       <Animated.View
         ref={() => {
           activeTranslationRef.current = translation;
@@ -541,9 +566,14 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
     <View style={collapsedInList ? COLLAPSED_ROW_STYLE : undefined}>
       <Animated.View style={dismissStyle}>
         <View
+          onPointerEnter={engageActions}
+          onTouchStart={engageActions}
           onLayout={({ nativeEvent: { layout } }) => {
             rowHeight.set(layout.height);
-            setMeasuredRowHeight(layout.height);
+            measuredRowHeightRef.current = layout.height;
+            if (actionsEngaged) {
+              setMeasuredRowHeight(layout.height);
+            }
             rowWidth.set(layout.width);
           }}
         >
@@ -791,6 +821,7 @@ function SwipeActionButton(props: {
       ) : (
         <Menu
           actions={props.menu.actions}
+          resolveActions={props.menu.resolveActions}
           onPressAction={props.menu.onPressAction}
           title={props.menu.title}
           style={{ height: "100%", width: "100%" }}

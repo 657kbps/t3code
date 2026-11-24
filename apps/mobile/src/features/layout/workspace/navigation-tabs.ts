@@ -35,22 +35,25 @@ export const NAVIGATION_TAB_ICONS = {
 } as const satisfies Readonly<Record<NavigationTab, AppSymbolName>>;
 
 export function useNavigationTabOrder() {
-  const preferences = useAtomValue(mobilePreferencesAtom);
-  const saved = AsyncResult.isSuccess(preferences)
-    ? preferences.value.navigationTabOrder
-    : undefined;
+  const saved = useAtomValue(mobilePreferencesAtom, (preferences) =>
+    AsyncResult.isSuccess(preferences) ? preferences.value.navigationTabOrder : undefined,
+  );
   return resolveWorkspaceTabOrder(saved);
 }
 
 export function useHiddenNavigationTabs() {
-  const preferences = useAtomValue(mobilePreferencesAtom);
+  const hiddenNavigationTabs = useAtomValue(mobilePreferencesAtom, (preferences) =>
+    AsyncResult.isSuccess(preferences) ? preferences.value.hiddenNavigationTabs : undefined,
+  );
+  const sharedSlotTab = useAtomValue(mobilePreferencesAtom, (preferences) =>
+    AsyncResult.isSuccess(preferences) ? preferences.value.sharedSlotTab : undefined,
+  );
   const selected = useWorkspaceTabs()?.state.selectedTab ?? "threads";
-  const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
   return [
     ...(navigationCustomizationAvailable()
-      ? resolveHiddenNavigationTabs(saved?.hiddenNavigationTabs)
+      ? resolveHiddenNavigationTabs(hiddenNavigationTabs)
       : []),
-    sharedSlotAbsentee(selected, saved?.sharedSlotTab),
+    sharedSlotAbsentee(selected, sharedSlotTab),
   ];
 }
 

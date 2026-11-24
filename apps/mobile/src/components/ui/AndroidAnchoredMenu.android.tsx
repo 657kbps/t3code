@@ -23,6 +23,7 @@ import { MenuPopup } from "./MenuPopup";
 
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 6;
+const EMPTY_MENU_ACTIONS: readonly MenuAction[] = [];
 
 // Freeze both snapshots at opening so keyboard and screen reflows cannot flip menu direction.
 type AnchorSnapshot = {
@@ -42,6 +43,7 @@ type OverlayFrame = {
 
 export type AndroidAnchoredMenuProps = {
   readonly actions: readonly MenuAction[];
+  readonly resolveActions?: () => readonly MenuAction[];
   readonly title?: string;
   readonly onPressAction?: MenuComponentProps["onPressAction"];
   readonly accessibilityLabel?: AccessibilityProps["accessibilityLabel"];
@@ -199,9 +201,12 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   });
 
   const parent = path[path.length - 1] ?? null;
-  const levelActions = (parent?.subactions ?? props.actions).filter(
-    (action) => !(action.attributes?.hidden ?? false),
-  );
+  const levelActions =
+    anchor === null
+      ? EMPTY_MENU_ACTIONS
+      : (
+          parent?.subactions ?? (props.resolveActions ? props.resolveActions() : props.actions)
+        ).filter((action) => !(action.attributes?.hidden ?? false));
 
   const local =
     anchor === null || overlay === null

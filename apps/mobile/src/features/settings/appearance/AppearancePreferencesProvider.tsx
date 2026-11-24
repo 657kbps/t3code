@@ -44,6 +44,10 @@ import {
   getMobileUniwindThemeName,
   type MobileThemeRuntimeState,
 } from "../../../lib/mobileThemeRuntime";
+import {
+  appearancePreferencesSnapshotsEqual,
+  selectAppearancePreferences,
+} from "./appearancePreferencesSnapshot";
 
 interface AppearancePreferencesContextValue {
   readonly appearance: ResolvedAppearance;
@@ -186,25 +190,27 @@ export function installAppearanceRuntime(): () => void {
   };
 }
 
+const appearancePreferencesAtom = Atom.make((get) =>
+  selectAppearancePreferences(get(mobilePreferencesAtom)),
+).pipe(Atom.withEquality(appearancePreferencesSnapshotsEqual));
+
 export function AppearancePreferencesProvider(props: { readonly children: ReactNode }) {
-  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const appearanceSnapshot = useAtomValue(appearancePreferencesAtom);
   const savePreferences = useAtomCommand(saveMobilePreferences);
   const systemColorScheme = useColorScheme() === "dark" ? "dark" : "light";
-  const storedPreferences = AsyncResult.isSuccess(preferencesResult)
-    ? preferencesResult.value
-    : null;
+  const storedPreferences = appearanceSnapshot.isReady ? appearanceSnapshot : null;
   const preferences = useMemo(
     () => resolveAppearancePreferences(storedPreferences),
     [storedPreferences],
   );
   const androidNavigationStyle = resolveAndroidNavigationStyle(
-    storedPreferences?.androidNavigationStyle,
+    appearanceSnapshot.androidNavigationStyle,
     manufacturer,
     process.env.EXPO_PUBLIC_T3_FLOATING_TABS === "1",
   );
-  const themeMode = normalizeMobileThemeMode(storedPreferences?.themeMode);
+  const themeMode = normalizeMobileThemeMode(appearanceSnapshot.themeMode);
   const themeAppearance = themeMode === "system" ? systemColorScheme : themeMode;
-  const resolvedThemeIds = resolveMobileThemeIds(storedPreferences ?? {});
+  const resolvedThemeIds = resolveMobileThemeIds(appearanceSnapshot);
   const themeIds = useMemo<MobileThemeIds>(
     () => ({ light: resolvedThemeIds.light, dark: resolvedThemeIds.dark }),
     [resolvedThemeIds.dark, resolvedThemeIds.light],
@@ -223,7 +229,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     () => resolveAppearance({ baseFontSize, codeFontSize, codeWordBreak, terminalFontSize }),
     [baseFontSize, codeFontSize, codeWordBreak, terminalFontSize],
   );
-  const isReady = AsyncResult.isSuccess(preferencesResult);
+  const isReady = appearanceSnapshot.isReady;
   const updatePreferences = (patch: Partial<Preferences>) => {
     startTransition(() => {
       void savePreferences(patch);
@@ -292,7 +298,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     updatePreferences({ codeWordBreak: value });
   };
 
-  const mathRenderingEnabled = storedPreferences?.mathRenderingEnabled === true;
+  const mathRenderingEnabled = appearanceSnapshot.mathRenderingEnabled === true;
   const setMathRenderingEnabled = (value: boolean) =>
     updatePreferences({ mathRenderingEnabled: value });
 

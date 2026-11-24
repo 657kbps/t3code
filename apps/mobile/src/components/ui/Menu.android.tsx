@@ -9,6 +9,7 @@ export function Menu(props: MenuProps) {
     return (
       <AndroidAnchoredMenu
         actions={props.actions}
+        resolveActions={props.resolveActions}
         className={props.className}
         title={props.title}
         style={props.style}
@@ -28,6 +29,7 @@ export function Menu(props: MenuProps) {
   return (
     <AndroidAnchoredMenu
       actions={props.actions}
+      resolveActions={props.resolveActions}
       accessibilityLabel={props.accessibilityLabel}
       className={props.className}
       title={props.title}

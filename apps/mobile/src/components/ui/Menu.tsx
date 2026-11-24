@@ -1,4 +1,4 @@
-import { MenuView } from "@react-native-menu/menu";
+import { MenuView, type MenuAction } from "@react-native-menu/menu";
 import {
   cloneElement,
   isValidElement,
@@ -17,18 +17,20 @@ const ThemedMenuView = withUniwind(
   function NativeMenuView({
     iconColor,
     destructiveIconColor,
+    resolveActions,
     ...props
   }: ComponentProps<typeof MenuView> & {
     readonly iconColor?: ColorValue;
     readonly destructiveIconColor?: ColorValue;
+    readonly resolveActions?: () => readonly MenuAction[];
   }) {
     const actions = useMemo(
       () =>
-        withMenuActionIconColors(props.actions, {
+        withMenuActionIconColors(resolveActions ? resolveActions() : props.actions, {
           icon: iconColor,
           destructiveIcon: destructiveIconColor,
         }),
-      [props.actions, iconColor, destructiveIconColor],
+      [props.actions, resolveActions, iconColor, destructiveIconColor],
     );
     return <MenuView {...props} actions={actions} />;
   },

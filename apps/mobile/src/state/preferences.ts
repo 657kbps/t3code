@@ -18,6 +18,40 @@ type PreferencesUpdate =
       ) => Partial<MobilePreferences.Preferences>;
     };
 
+function preferencesShallowEqual(
+  left: MobilePreferences.Preferences,
+  right: MobilePreferences.Preferences,
+): boolean {
+  const leftKeys = Object.keys(left) as Array<keyof MobilePreferences.Preferences>;
+  const rightKeys = Object.keys(right) as Array<keyof MobilePreferences.Preferences>;
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (!Object.hasOwn(right, key) || !Object.is(left[key], right[key])) return false;
+  }
+  return true;
+}
+
+export function mergeMobilePreferences(
+  stored: AsyncResult.Success<MobilePreferences.Preferences, never>,
+  confirmed: MobilePreferences.Preferences,
+  optimistic: Partial<MobilePreferences.Preferences>,
+  previous: AsyncResult.Success<MobilePreferences.Preferences, never> | undefined,
+): AsyncResult.Success<MobilePreferences.Preferences, never> {
+  const nextValue = {
+    ...stored.value,
+    ...confirmed,
+    ...optimistic,
+  };
+  if (
+    previous !== undefined &&
+    previous.waiting === stored.waiting &&
+    preferencesShallowEqual(previous.value, nextValue)
+  ) {
+    return previous;
+  }
+  return AsyncResult.success(nextValue, stored);
+}
+
 /** Keep optimistic patches separate so hydration cannot overwrite pending writes. */
 export function createMobilePreferencesState(
   runtime: Atom.AtomRuntime<MobilePreferences.MobilePreferencesStore>,
@@ -44,16 +78,23 @@ export function createMobilePreferencesState(
     Atom.withLabel("mobile:preferences:confirmed"),
   );
   let nextPatchVersion = 0;
+  let lastMergedResult: AsyncResult.Success<MobilePreferences.Preferences, never> | undefined;
 
   const preferencesAtom = Atom.make((get) => {
     const stored = get(storedPreferencesAtom);
     const confirmed = get(confirmedPreferencesAtom);
     const optimistic = get(optimisticPatchAtom);
-    return AsyncResult.map(stored, (preferences) => ({
-      ...preferences,
-      ...confirmed,
-      ...optimistic.values,
-    }));
+    if (!AsyncResult.isSuccess(stored)) {
+      lastMergedResult = undefined;
+      return stored;
+    }
+    lastMergedResult = mergeMobilePreferences(
+      stored,
+      confirmed,
+      optimistic.values,
+      lastMergedResult,
+    );
+    return lastMergedResult;
   }).pipe(Atom.keepAlive, Atom.withLabel("mobile:preferences"));
 
   const settlePatch = (

@@ -1,6 +1,10 @@
-import { act, createContext, type ReactNode } from "react";
+import { act, createContext, useLayoutEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vite-plus/test";
+
+const mockViewInstance = {
+  measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => cb(0, 0, 100, 40),
+};
 
 vi.mock("react-native", () => ({
   View: (props: {
@@ -8,20 +12,30 @@ vi.mock("react-native", () => ({
     readonly importantForAccessibility?: string;
     readonly accessibilityElementsHidden?: boolean;
     readonly hitSlop?: number;
-  }) => (
-    <div
-      data-important={props.importantForAccessibility}
-      data-hidden={props.accessibilityElementsHidden ? "true" : undefined}
-    >
-      {props.children}
-    </div>
-  ),
+    readonly ref?: ((instance: typeof mockViewInstance | null) => void) | { current: unknown };
+  }) => {
+    useLayoutEffect(() => {
+      const ref = props.ref;
+      if (typeof ref !== "function") return;
+      ref(mockViewInstance);
+      return () => ref(null);
+    }, [props.ref]);
+    return (
+      <div
+        data-important={props.importantForAccessibility}
+        data-hidden={props.accessibilityElementsHidden ? "true" : undefined}
+      >
+        {props.children}
+      </div>
+    );
+  },
   Pressable: (props: {
     readonly children?: ReactNode;
     readonly accessibilityRole?: string;
     readonly accessibilityLabel?: string;
     readonly accessibilityState?: { readonly selected?: boolean; readonly disabled?: boolean };
     readonly hitSlop?: number;
+    readonly onPress?: () => void;
   }) => (
     <button
       type="button"
@@ -29,6 +43,7 @@ vi.mock("react-native", () => ({
       data-label={props.accessibilityLabel}
       data-selected={props.accessibilityState?.selected ? "true" : undefined}
       data-hitslop={props.hitSlop !== undefined ? String(props.hitSlop) : undefined}
+      onClick={props.onPress}
     >
       {props.children}
     </button>
@@ -130,4 +145,35 @@ it("resolves missing accessibility fields past hitSlop wrappers and across sibli
   const innerButton = outer?.firstElementChild?.querySelector("button");
   expect(innerButton?.getAttribute("data-role")).toBeNull();
   expect(innerButton?.getAttribute("data-label")).toBeNull();
+});
+
+it("evaluates lazy actions only when the menu is opened", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  roots.push(root);
+
+  const actions = vi.fn(() => [{ id: "open", title: "Open" }]);
+
+  act(() =>
+    root.render(
+      <AndroidAnchoredMenu actions={[]} resolveActions={actions}>
+        {(open) => (
+          <Pressable accessibilityRole="button" accessibilityLabel="Row" onPress={open}>
+            <span>Row</span>
+          </Pressable>
+        )}
+      </AndroidAnchoredMenu>,
+    ),
+  );
+
+  expect(actions).not.toHaveBeenCalled();
+
+  const trigger = container.querySelector("button");
+  act(() => {
+    trigger?.click();
+  });
+
+  expect(actions).toHaveBeenCalled();
 });

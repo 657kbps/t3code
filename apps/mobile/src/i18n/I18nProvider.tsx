@@ -55,10 +55,11 @@ function readSystemLocales(): ReadonlyArray<string> {
 }
 
 export function useLanguagePreference(): string {
-  const preferences = useAtomValue(mobilePreferencesAtom);
-  return AsyncResult.isSuccess(preferences)
-    ? (preferences.value.language ?? DEFAULT_LOCALE)
-    : DEFAULT_LOCALE;
+  return useAtomValue(mobilePreferencesAtom, (preferences) =>
+    AsyncResult.isSuccess(preferences)
+      ? (preferences.value.language ?? DEFAULT_LOCALE)
+      : DEFAULT_LOCALE,
+  );
 }
 
 /** Translates the app into the saved language; "system" follows the device. Mounted once in App. */

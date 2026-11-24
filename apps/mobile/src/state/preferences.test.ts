@@ -28,7 +28,7 @@ vi.mock("../lib/runtime", async () => {
   };
 });
 
-import { createMobilePreferencesState } from "./preferences";
+import { createMobilePreferencesState, mergeMobilePreferences } from "./preferences";
 import { useAtomCommand } from "./use-atom-command";
 import * as MobilePreferences from "../persistence/mobile-preferences";
 
@@ -233,4 +233,80 @@ describe("mobile preferences state", () => {
       registry.dispose();
     }),
   );
+
+  it.effect(
+    "preserves preferences result identity when settlement matches the optimistic patch",
+    () =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let stored: MobilePreferences.Preferences = {};
+        const state = makePreferencesState({
+          load: Effect.sync(() => stored),
+          savePatch: (patch) => Effect.succeed(patch),
+          update: (transform) =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+              stored = { ...stored, ...transform(stored) };
+              return stored;
+            }),
+        });
+        const registry = AtomRegistry.make();
+        const unmount = registry.mount(state.preferencesAtom);
+        yield* AtomRegistry.getResult(registry, state.preferencesAtom, { suspendOnWaiting: true });
+
+        const notifications: Array<unknown> = [];
+        const unsubscribe = registry.subscribe(state.preferencesAtom, (value) => {
+          notifications.push(value);
+        });
+
+        const fiber = yield* Effect.forkChild(
+          state.savePreferences.run(registry, {
+            transform: () => ({ threadListSettledShelfExpanded: true }),
+          }),
+          { startImmediately: true },
+        );
+        yield* Deferred.await(started);
+        expect(notifications).toHaveLength(1);
+
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(fiber);
+        expect(notifications).toHaveLength(1);
+
+        unsubscribe();
+        unmount();
+        registry.dispose();
+      }),
+  );
+
+  it("preserves the stored waiting flag and compares preference keys", () => {
+    const stored = AsyncResult.success({ language: undefined } as MobilePreferences.Preferences, {
+      waiting: true,
+    });
+    const first = mergeMobilePreferences(stored, {}, {}, undefined);
+    expect(first.waiting).toBe(true);
+
+    const same = mergeMobilePreferences(
+      AsyncResult.success({ language: undefined } as MobilePreferences.Preferences, {
+        waiting: true,
+      }),
+      {},
+      {},
+      first,
+    );
+    expect(same).toBe(first);
+
+    // Same key count, different keys: an undefined value must not look equal to a missing key.
+    const changed = mergeMobilePreferences(
+      AsyncResult.success({ themeMode: "dark" } as MobilePreferences.Preferences, {
+        waiting: true,
+      }),
+      {},
+      {},
+      first,
+    );
+    expect(changed).not.toBe(first);
+    expect(changed.value).toEqual({ themeMode: "dark" });
+  });
 });

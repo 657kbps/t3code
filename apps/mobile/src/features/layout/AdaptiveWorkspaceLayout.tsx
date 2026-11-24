@@ -232,21 +232,36 @@ export function AdaptiveWorkspaceLayout(props: {
   readonly workspaceRouteKey: string | undefined;
   readonly workspaceRouteName: string | undefined;
 }) {
-  const preferencesResult = useAtomValue(mobilePreferencesAtom);
-  if (!AsyncResult.isSuccess(preferencesResult)) {
-    return AsyncResult.isFailure(preferencesResult) ? (
+  const preferencesStatus = useAtomValue(mobilePreferencesAtom, (result) =>
+    AsyncResult.isSuccess(result)
+      ? ("success" as const)
+      : AsyncResult.isFailure(result)
+        ? ("failure" as const)
+        : ("pending" as const),
+  );
+  const projectGroupingMode = useAtomValue(mobilePreferencesAtom, (result) =>
+    AsyncResult.isSuccess(result)
+      ? resolveMobileProjectGroupingSettings(result.value).sidebarProjectGroupingMode
+      : undefined,
+  );
+  const savedThreadListFilters = useAtomValue(mobilePreferencesAtom, (result) =>
+    AsyncResult.isSuccess(result) ? result.value.threadListFilters : undefined,
+  );
+  if (preferencesStatus !== "success") {
+    return preferencesStatus === "failure" ? (
       <AdaptiveWorkspaceLayoutContent
         {...props}
         projectGroupingMode={DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS.sidebarProjectGroupingMode}
       />
     ) : null;
   }
-  const groupingSettings = resolveMobileProjectGroupingSettings(preferencesResult.value);
   return (
     <AdaptiveWorkspaceLayoutContent
       {...props}
-      projectGroupingMode={groupingSettings.sidebarProjectGroupingMode}
-      savedThreadListFilters={preferencesResult.value.threadListFilters}
+      projectGroupingMode={
+        projectGroupingMode ?? DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS.sidebarProjectGroupingMode
+      }
+      savedThreadListFilters={savedThreadListFilters}
     />
   );
 }

@@ -13,7 +13,10 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
-import { THREAD_LIST_ROW_LAYOUT } from "./threadListAnimations";
+import {
+  threadListShelfExpansionKey,
+  useThreadListShelfLayoutAnimation,
+} from "./threadListAnimations";
 import { useAtomValue } from "@effect/atom-react";
 import { useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
@@ -73,23 +76,15 @@ import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance
 import type { ThreadPrPresentation } from "../../state/thread-pr-presentation";
 import { ThreadPrDemandProvider } from "../../state/thread-pr-demand";
 import {
-  isThreadListV2ListItem,
-  threadListV2ListItemsAreEqual,
+  appendThreadListV2ShowMoreItem,
+  getThreadListV2DisplayItemType,
+  threadListV2DisplayItemsAreEqual,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
-  type ThreadListV2ListItem,
+  type ThreadListV2DisplayListItem,
 } from "./threadListV2";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
-
-type SidebarListItem =
-  | ThreadListV2ListItem
-  | {
-      readonly type: "v2-show-more";
-      readonly key: string;
-      readonly hiddenCount: number;
-      readonly state?: "loading" | "failed";
-    };
 
 interface ThreadNavigationSidebarProps {
   readonly width: number;
@@ -255,6 +250,13 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
+  const shelfLayoutAnimation = useThreadListShelfLayoutAnimation(
+    threadListShelfExpansionKey({
+      workingShelfExpanded,
+      snoozedShelfExpanded,
+      settledShelfExpanded,
+    }),
+  );
   const now = useThreadListNow(threads);
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
   const {
@@ -298,22 +300,12 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     settledShelfExpanded,
     selectedThreadKey,
   });
-  const listItems: readonly SidebarListItem[] =
-    settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0
-      ? [
-          ...threadListV2Items,
-          {
-            type: "v2-show-more",
-            key: "v2-show-more",
-            hiddenCount: threadListV2Layout.hiddenSettledCount,
-            ...(olderSettledShelf.loading
-              ? { state: "loading" as const }
-              : olderSettledShelf.failed
-                ? { state: "failed" as const }
-                : {}),
-          },
-        ]
-      : threadListV2Items;
+  const listItems = appendThreadListV2ShowMoreItem(threadListV2Items, {
+    settledShelfExpanded,
+    hiddenSettledCount: threadListV2Layout.hiddenSettledCount,
+    loading: olderSettledShelf.loading,
+    failed: olderSettledShelf.failed,
+  });
 
   const handleSwipeableWillOpen = (methods: SwipeableMethods) => {
     if (openSwipeableRef.current !== methods) {
@@ -357,6 +349,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     onScrollBeginDrag: handleScrollBeginDrag,
   });
   // Recycle equality needs project/search data for titles and favicons; keep the minute clock on items to limit updates.
+  // The transition rides along so mounted LegendList containers re-read its latest ref.
   const listExtraData = {
     activeNewTask,
     selectedThreadKey: selectedThreadKey ?? "",
@@ -366,18 +359,10 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     listEnvironments,
     threadSearchMatchByKey,
     workingShelfEnabled,
+    shelfLayoutAnimation,
   };
   useThreadJumpShortcuts(listItems, handleSelectThread, props.onOpenPendingTask);
-  const sidebarItemsAreEqual = (previous: SidebarListItem, item: SidebarListItem): boolean => {
-    if (isThreadListV2ListItem(previous) && isThreadListV2ListItem(item)) {
-      return threadListV2ListItemsAreEqual(previous, item);
-    }
-    if (previous.type === "v2-show-more" && item.type === "v2-show-more") {
-      return previous.hiddenCount === item.hiddenCount && previous.state === item.state;
-    }
-    return false;
-  };
-  const renderListItem = ({ item }: { readonly item: SidebarListItem }) => {
+  const renderListItem = ({ item }: { readonly item: ThreadListV2DisplayListItem }) => {
     switch (item.type) {
       case "v2-pending": {
         const pendingScopeKey = scopedProjectKey(
@@ -616,13 +601,13 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             <GestureDetector gesture={sidebarScrollGesture}>
               <AnimatedLegendList
                 renderScrollComponent={NativeScrollView}
-                itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}
+                itemLayoutAnimation={shelfLayoutAnimation}
                 data={listItems}
                 drawDistance={500}
-                estimatedItemSize={64}
+                estimatedItemSize={48}
                 extraData={listExtraData}
-                getItemType={(item) => item.type}
-                itemsAreEqual={sidebarItemsAreEqual}
+                getItemType={getThreadListV2DisplayItemType}
+                itemsAreEqual={threadListV2DisplayItemsAreEqual}
                 keyExtractor={(item) => item.key}
                 renderItem={renderListItem}
                 automaticallyAdjustsScrollIndicatorInsets
@@ -673,13 +658,13 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             <GestureDetector gesture={sidebarScrollGesture}>
               {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- The Android sidebar has no native header to register with. */}
               <AnimatedLegendList
-                itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}
+                itemLayoutAnimation={shelfLayoutAnimation}
                 data={listItems}
                 drawDistance={500}
-                estimatedItemSize={64}
+                estimatedItemSize={48}
                 extraData={listExtraData}
-                getItemType={(item) => item.type}
-                itemsAreEqual={sidebarItemsAreEqual}
+                getItemType={getThreadListV2DisplayItemType}
+                itemsAreEqual={threadListV2DisplayItemsAreEqual}
                 keyExtractor={(item) => item.key}
                 renderItem={renderListItem}
                 contentContainerStyle={{

@@ -29,12 +29,15 @@ import {
 import type { MenuAction } from "@react-native-menu/menu";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { keepMarked, setActiveLocale } from "../../i18n/messages";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { makeRawThreadShell, makeThreadShellFixture } from "../../test-fixtures";
 import { threadJumpTarget } from "../keyboard/threadKeyboardShortcuts";
 import {
+  appendThreadListV2ShowMoreItem,
   buildThreadListV2Items,
   buildThreadListV2ListItems,
+  getThreadListV2DisplayItemType,
   getThreadListV2OrderedSection,
   layoutThreadListV2RowMenuActions,
   resolveThreadListV2SnoozeMenuSelection,
@@ -43,6 +46,7 @@ import {
   resolveThreadListV2RowStatus,
   resolveThreadListV2Status,
   resolveThreadListV2WokeAt,
+  threadListV2DisplayItemsAreEqual,
   threadListV2ListItemsAreEqual,
   threadListV2RowAccessibilityLabel,
   threadHasUnseenCompletion,
@@ -101,6 +105,56 @@ describe("resolveThreadListV2SnoozePresets", () => {
     );
     // The evening preset is gone by 19:15; a reading from 10:00 would still offer it.
     expect(presets.map((preset) => preset.id)).not.toContain("at:today:18:00");
+  });
+
+  it("reuses cached presets within the same minute and invalidates on minute, preset, or locale changes", () => {
+    const customPresets = [{ kind: "after", minutes: 60 }] as const;
+    const minuteA = new Date(2026, 4, 8, 10, 0).toISOString();
+    const minuteB = new Date(2026, 4, 8, 10, 1).toISOString();
+
+    const first = resolveThreadListV2SnoozePresets(
+      {
+        secondary: "snooze",
+        now: minuteA,
+        presets: customPresets,
+      },
+      keepMarked,
+    );
+    const second = resolveThreadListV2SnoozePresets(
+      {
+        secondary: "snooze",
+        now: minuteA,
+        presets: customPresets,
+      },
+      keepMarked,
+    );
+    expect(second).toBe(first);
+
+    const nextMinute = resolveThreadListV2SnoozePresets(
+      {
+        secondary: "snooze",
+        now: minuteB,
+        presets: customPresets,
+      },
+      keepMarked,
+    );
+    expect(nextMinute).not.toBe(first);
+    expect(nextMinute[0]?.snoozedUntil).toBe(new Date(2026, 4, 8, 11, 1).toISOString());
+
+    setActiveLocale("de");
+    try {
+      const switchedLocale = resolveThreadListV2SnoozePresets(
+        {
+          secondary: "snooze",
+          now: minuteA,
+          presets: customPresets,
+        },
+        keepMarked,
+      );
+      expect(switchedLocale).not.toBe(first);
+    } finally {
+      setActiveLocale("en");
+    }
   });
 });
 
@@ -306,6 +360,26 @@ describe("resolveThreadListV2SwipeActions", () => {
       snoozeEnvironmentIds: new Set([environmentId]),
     });
     expect(layout.snoozedCount).toBe(1);
+  });
+
+  it("gives a settled slim row snooze beside un-settle, and none once it is snoozed", () => {
+    expect(
+      resolveThreadListV2SwipeActions({
+        variant: "slim",
+        settlementSupported: true,
+        snoozeSupported: true,
+        snoozable: true,
+      }),
+    ).toEqual({ primary: "unsettle", secondary: "snooze" });
+    expect(
+      resolveThreadListV2SwipeActions({
+        variant: "slim",
+        settlementSupported: true,
+        snoozeSupported: true,
+        snoozable: true,
+        snoozed: true,
+      }),
+    ).toEqual({ primary: "unsnooze", secondary: null });
   });
 });
 
@@ -1890,5 +1964,67 @@ describe("queued messages keep a settled thread active", () => {
       ["settled", "slim"],
     ]);
     expect(layout.settledCount).toBe(1);
+  });
+});
+
+describe("display list item types and show-more row", () => {
+  const threads = [
+    makeThread({ id: ThreadId.make("active"), title: "Active" }),
+    makeThread({ id: ThreadId.make("settled"), title: "Settled", settledOverride: "settled" }),
+  ];
+
+  it("splits card and slim item types and appends show-more only when expanded", () => {
+    const layout = buildThreadListV2Items({
+      threads,
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      settledShelfExpanded: true,
+    });
+    const listItems = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      settledCount: layout.settledCount,
+      settledShelfExpanded: true,
+      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+    });
+    const collapsed = appendThreadListV2ShowMoreItem(listItems, {
+      settledShelfExpanded: false,
+      hiddenSettledCount: 10,
+      loading: false,
+      failed: false,
+    });
+    expect(collapsed.map((item) => getThreadListV2DisplayItemType(item))).toEqual([
+      "v2-thread:card",
+      "v2-settled-shelf",
+      "v2-thread:slim",
+    ]);
+
+    const expanded = appendThreadListV2ShowMoreItem(listItems, {
+      settledShelfExpanded: true,
+      hiddenSettledCount: 10,
+      loading: false,
+      failed: false,
+    });
+    expect(expanded.map((item) => getThreadListV2DisplayItemType(item))).toEqual([
+      "v2-thread:card",
+      "v2-settled-shelf",
+      "v2-thread:slim",
+      "v2-show-more",
+    ]);
+    expect(
+      threadListV2DisplayItemsAreEqual(expanded.at(-1)!, {
+        type: "v2-show-more",
+        key: "v2-show-more",
+        hiddenCount: 10,
+      }),
+    ).toBe(true);
+    expect(
+      threadListV2DisplayItemsAreEqual(expanded.at(-1)!, {
+        type: "v2-show-more",
+        key: "v2-show-more",
+        hiddenCount: 5,
+      }),
+    ).toBe(false);
   });
 });

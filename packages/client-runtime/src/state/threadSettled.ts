@@ -222,8 +222,54 @@ export interface SnoozePresetOptions {
   readonly locale?: string | undefined;
 }
 
+const SNOOZE_FORMATTER_KEY_RECHECK_MS = 1_000;
+let snoozeFormattersKey: string | null = null;
+let snoozeFormattersKeyCheckedAt = 0;
+let snoozeTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+let snoozeWeekdayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+// Locale and hour cycle matter as much as the zone: a 12/24-hour switch must not reuse a formatter.
+function currentSnoozeFormatterKey(): string {
+  const options = Intl.DateTimeFormat().resolvedOptions();
+  return `${options.timeZone}|${options.locale}|${options.hourCycle ?? ""}`;
+}
+
+function getSnoozeFormatters() {
+  const now = Date.now();
+  if (
+    snoozeFormattersKey === null ||
+    Math.abs(now - snoozeFormattersKeyCheckedAt) >= SNOOZE_FORMATTER_KEY_RECHECK_MS
+  ) {
+    snoozeFormattersKeyCheckedAt = now;
+    const key = currentSnoozeFormatterKey();
+    if (key !== snoozeFormattersKey) {
+      snoozeFormattersKey = key;
+      snoozeTimeFormatters = new Map();
+      snoozeWeekdayFormatters = new Map();
+    }
+  }
+  return { timeFormatters: snoozeTimeFormatters, weekdayFormatters: snoozeWeekdayFormatters };
+}
+
 function snoozeTimeOfDayLabel(date: Date): string {
-  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const { timeFormatters } = getSnoozeFormatters();
+  let formatter = timeFormatters.get("");
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+    timeFormatters.set("", formatter);
+  }
+  return formatter.format(date);
+}
+
+function snoozeWeekdayLabel(date: Date, locale?: string): string {
+  const { weekdayFormatters } = getSnoozeFormatters();
+  const key = locale ?? "";
+  let formatter = weekdayFormatters.get(key);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(locale, { weekday: "short" });
+    weekdayFormatters.set(key, formatter);
+  }
+  return formatter.format(date);
 }
 
 // Calendar-day advance instead of adding DAY_MS: fixed millisecond offsets
@@ -340,7 +386,7 @@ export function resolveSnoozePreset(
     whenLabel:
       labelNamesDay || wake.toDateString() === now.toDateString()
         ? time
-        : `${wake.toLocaleDateString(locale, { weekday: "short" })} ${time}`,
+        : `${snoozeWeekdayLabel(wake, locale)} ${time}`,
     snoozedUntil: wake.toISOString(),
   };
 }
