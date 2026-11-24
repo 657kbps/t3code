@@ -138,7 +138,7 @@ describe("readManagedPolicy", () => {
       );
       // Keys beside the wrapper, or a second entry, are refused rather than dropped or merged.
       for (const ambiguous of [
-        { Forced: [{ mcx_preference_settings: settings }], limits: { telemetry: false } },
+        { Forced: [{ mcx_preference_settings: settings }], limits: {} },
         { Forced: [{ mcx_preference_settings: settings }, { mcx_preference_settings: settings }] },
       ]) {
         assert.include(
@@ -147,6 +147,16 @@ describe("readManagedPolicy", () => {
         );
       }
       assert.equal(yield* read("darwin", file), managedPolicyPath("darwin"));
+      const legacyTelemetry = JSON.stringify({ ...settings, limits: { telemetry: false } });
+      assert.equal(
+        yield* read("darwin", { [managedPolicyPath("darwin")]: legacyTelemetry }),
+        managedPolicyPath("darwin"),
+      );
+      const badLegacyTelemetry = JSON.stringify({ ...settings, limits: { telemetry: "off" } });
+      assert.include(
+        yield* read("darwin", { [managedPolicyPath("darwin")]: badLegacyTelemetry }),
+        '["limits"]["telemetry"]',
+      );
       const typo = JSON.stringify({ ...settings, limits: { maxRuntimeMod: "auto" } });
       assert.include(
         yield* read("darwin", { [managedPolicyPath("darwin")]: typo }),
@@ -231,7 +241,6 @@ describe("readManagedPolicy", () => {
               text("SupportUrl", ""),
               // Registry names ignore case.
               text("maxRuntimeMode", "auto-accept-edits"),
-              dword("Telemetry", 0),
               text("Settings", '{"enableAgentBrowserAccess": {"value": false, "locked": true}}'),
               text("UpdatesMode", "off"),
               dword("AllowNightly", 1),
@@ -252,7 +261,6 @@ describe("readManagedPolicy", () => {
           settings: { enableAgentBrowserAccess: { value: false, locked: true } },
           limits: {
             maxRuntimeMode: "auto-accept-edits",
-            telemetry: false,
             updates: { mode: "off", allowNightly: true },
             clients: ["desktop", "local-browser", "remote"],
             providers: { allowedDrivers: ["codex", "claudeAgent", "UnknownDriver"] },
@@ -279,7 +287,7 @@ describe("readManagedPolicy", () => {
             disabledGroups,
           ),
         ),
-        { schemaVersion: 1, organization: "Société 日本 ✓", limits: { telemetry: false } },
+        { schemaVersion: 1, organization: "Société 日本 ✓" },
       );
       // With nothing else configured, that is no policy rather than one missing Organization.
       assert.isUndefined(

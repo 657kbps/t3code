@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { replayAndBufferProjectedLiveEvents } from "../orchestration-v2/LiveStreamBudget.ts";
+import { normalizeLegacyTurnItemPayload } from "./legacyTurnItemPayload.ts";
 
 import {
   toPersistenceDecodeError,
@@ -212,7 +213,11 @@ function metadataForV2Event(event: OrchestrationV2DomainEvent): Record<string, u
 
 // Replay decodes rows one by one; a span per row would trace every replayed event.
 const rowToV2StoredEvent = Effect.fnUntraced(function* (row: ApplicationEventRow) {
-  const payload = yield* parseJson(row.payload_json);
+  const rawPayload = yield* parseJson(row.payload_json);
+  const payload =
+    row.event_type === "turn-item.updated"
+      ? normalizeLegacyTurnItemPayload(rawPayload)
+      : rawPayload;
   const metadata = yield* parseJson(row.metadata_json);
   const values =
     typeof metadata === "object" && metadata !== null ? (metadata as Record<string, unknown>) : {};
