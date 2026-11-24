@@ -17,6 +17,19 @@ const { mocks } = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => (
+    <button aria-label={accessibilityLabel} onClick={onPress}>
+      {children}
+    </button>
+  ),
 }));
 
 vi.mock("react-native-reanimated", () => ({

@@ -1,6 +1,6 @@
 import { useGT } from "gt-react-native";
 import { useEffect, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import Animated, { LinearTransition, ReduceMotion } from "react-native-reanimated";
 import { useResolveClassNames } from "uniwind";
 
@@ -126,13 +126,21 @@ export function AppUpdatesSection({ currentVersion }: { readonly currentVersion:
   return (
     <SettingsSection
       title={gt("Updates")}
+      // A pressable text rather than Button: Button's minimum height would make the header row
+      // taller than its title, and it would collapse again whenever the action is unavailable.
       trailing={
         showTrailingCheckAgain ? (
-          <Button
-            label={gt("Check again")}
-            tone="text"
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Check again")}
+            hitSlop={14}
             onPress={() => void controller.check(currentVersion)}
-          />
+            className="pr-2 active:opacity-60 android:pr-4"
+          >
+            <Text textRole="footnote" className="font-t3-medium text-primary-text">
+              {gt("Check again")}
+            </Text>
+          </Pressable>
         ) : undefined
       }
       footer={footer}
