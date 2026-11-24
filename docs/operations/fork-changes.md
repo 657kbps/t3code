@@ -80,6 +80,15 @@ upstream's shape and the fork's behavior:
 
 - `scripts/notify-discord-release.{ts,test.ts}`, which upstream keeps and this fork does
   not run.
+- **Product telemetry and analytics**, in full: the server's analytics, identify,
+  provider-dimension and feature-usage services, relay tracing, the feedback services with
+  their MCP toolkit, the mobile crash reporting and OTLP tracing, and the desktop
+  relay-telemetry IPC, along with `docs/internals/08_product-analytics.md` and
+  `docs/user/telemetry.md`. A merge keeps those files deleted and re-removes the wiring
+  upstream adds back: the `telemetry` managed-policy toggle and its template, the
+  `agentFeedback` settings, `relayTracingAllowed` in the server config payload,
+  `AnalyticsDevice` in the mobile client capabilities, and `clientAnalyticsProps` as
+  `layerWsRpc`'s second parameter with every call site that passes it.
 - **Telemetry**: product analytics (`apps/server/src/telemetry/`, `packages/shared/src/telemetryId.ts`),
   agent feedback (`apps/server/src/feedback/`, its MCP toolkit, CLI command, client cards and eval case),
   relay client tracing (`packages/shared/src/relayTracing.ts`, `apps/server/src/cloud/relayTracing.ts`,
