@@ -56,21 +56,45 @@ const decodeDocumentExit = Schema.decodeUnknownExit(ManagedPolicyDocument, {
   onExcessProperty: "error",
 });
 
+const stripLegacyTelemetryLimit = (value: unknown): unknown => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  const limits = record.limits;
+  if (
+    limits === null ||
+    typeof limits !== "object" ||
+    Array.isArray(limits) ||
+    typeof (limits as Record<string, unknown>).telemetry !== "boolean"
+  ) {
+    return value;
+  }
+  const { telemetry: _telemetry, ...restLimits } = limits as Record<string, unknown>;
+  return { ...record, limits: restLimits };
+};
+
 /** Decode a policy from JSON text, or from a value a profile already parsed. */
-const decodeDocument = (path: string, raw: unknown) => {
-  const decoded = typeof raw === "string" ? decodeDocumentJsonExit(raw) : decodeDocumentExit(raw);
-  if (Exit.isSuccess(decoded)) return Effect.succeed(decoded.value);
+const decodeDocument = Effect.fnUntraced(function* (path: string, raw: unknown) {
+  const parsed = typeof raw === "string" ? decodeJsonExit(raw) : undefined;
+  const normalized =
+    parsed === undefined
+      ? stripLegacyTelemetryLimit(raw)
+      : Exit.isSuccess(parsed)
+        ? stripLegacyTelemetryLimit(parsed.value)
+        : raw;
+  const decoded =
+    typeof normalized === "string"
+      ? decodeDocumentJsonExit(normalized)
+      : decodeDocumentExit(normalized);
+  if (Exit.isSuccess(decoded)) return decoded.value;
   const error = Cause.squash(decoded.cause);
   // The schema message names the offending key, e.g. `Expected no excess property at ["limits"]`.
   const detail = Schema.isSchemaError(error) ? ` (${error.message.replace(/\s*\n\s*/g, " ")})` : "";
-  return Effect.fail(
-    new ManagedPolicyFileError({
-      path,
-      reason: `it is not valid JSON or does not match the policy schema${detail}`,
-      cause: decoded.cause,
-    }),
-  );
-};
+  return yield* new ManagedPolicyFileError({
+    path,
+    reason: `it is not valid JSON or does not match the policy schema${detail}`,
+    cause: decoded.cause,
+  });
+});
 
 /** Read the policy document at `path`; a missing file means no policy. */
 export const readManagedPolicyFile = Effect.fn("readManagedPolicyFile")(function* (path: string) {
@@ -112,7 +136,6 @@ export const WINDOWS_POLICY_VALUES = {
   MaxRuntimeMode: { type: "string", path: ["limits", "maxRuntimeMode"] },
   Connect: { type: "boolean", path: ["limits", "connect"] },
   WebhookTasks: { type: "boolean", path: ["limits", "webhookTasks"] },
-  Telemetry: { type: "boolean", path: ["limits", "telemetry"] },
   BrowserCookieImport: { type: "boolean", path: ["limits", "browserCookieImport"] },
   PreviewTunnel: { type: "boolean", path: ["limits", "previewTunnel"] },
   ProviderInstances: { type: "json", path: ["limits", "providers", "instances"] },
@@ -427,6 +450,11 @@ function windowsPolicyDocument(
       continue;
     }
     if (Object.hasOwn(WINDOWS_POLICY_GROUPS, value.name)) continue;
+    // Legacy upstream ADMX templates wrote Telemetry; keep existing GPOs loadable now that it is always off.
+    if (value.name.toLowerCase() === "telemetry") {
+      if (dwordBoolean(value) === undefined) return { error: `${where} must be a DWORD of 0 or 1` };
+      continue;
+    }
     if (!Object.hasOwn(WINDOWS_POLICY_VALUES, value.name)) {
       return { error: `${value.name} is not a T3 Code policy value` };
     }

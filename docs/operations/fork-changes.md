@@ -80,6 +80,21 @@ upstream's shape and the fork's behavior:
 
 - `scripts/notify-discord-release.{ts,test.ts}`, which upstream keeps and this fork does
   not run.
+- **Telemetry**: product analytics (`apps/server/src/telemetry/`, `packages/shared/src/telemetryId.ts`),
+  agent feedback (`apps/server/src/feedback/`, its MCP toolkit, CLI command, client cards and eval case),
+  relay client tracing (`packages/shared/src/relayTracing.ts`, `apps/server/src/cloud/relayTracing.ts`,
+  `apps/server/src/cloud/traceRelayRequest.ts`, the mobile relay tracing layer, and the desktop
+  `getRelayTelemetryEnabled` channel), mobile crash reporting
+  (`apps/mobile/src/features/observability/`, `expo-observe`), and the relay's
+  `infra/relay/src/mobileTelemetry/` route with its Axiom datasets. The managed-policy `telemetry`
+  limit, `T3CODE_TELEMETRY_ENABLED` and the `T3CODE_TELEMETRY_CHANNEL` build define are gone too;
+  the build define is now `T3CODE_RELEASE_CHANNEL` (while `packages/shared/src/managedPolicyFile.ts`
+  and `apps/server/src/persistence/legacyTurnItemPayload.ts` keep legacy policy files and
+  `feedback_request` database rows readable). `docs/user/telemetry.md` became
+  `docs/user/diagnostics-export.md`, and `docs/internals/08_product-analytics.md` is gone. A sync
+  keeps these deletions: take this fork's version for the whole change instead of restoring
+  upstream's. Everything else — local resource monitoring, local trace files, and user-configured
+  OTLP export — stays.
 
 ## Mirroring `main`
 

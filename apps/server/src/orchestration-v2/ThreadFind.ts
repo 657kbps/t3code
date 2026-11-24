@@ -1,5 +1,4 @@
 import {
-  OrchestrationV2TurnItemJson,
   type OrchestrationV2ProjectedTurnItem,
   OrchestrationV2SearchThreadInput,
   type OrchestrationV2SearchThreadResult,
@@ -7,6 +6,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import { decodeStoredTurnItemJson } from "../persistence/legacyTurnItemPayload.ts";
 import { searchableMessageSegments, searchablePlanSegments } from "@t3tools/shared/threadFindText";
 import { countThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
 import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
@@ -219,7 +219,7 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
   const encodeSources = Schema.encodeEffect(
     Schema.fromJsonString(Schema.Array(Schema.Struct({ threadId: ThreadId, id: TurnItemId }))),
   );
-  const decodeItem = Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson));
+  const decodeItem = decodeStoredTurnItemJson;
   const isSnapshotError = Schema.is(
     Schema.Union([ProjectionStoreReadError, ProjectionStoreThreadNotFoundError]),
   );

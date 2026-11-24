@@ -1,6 +1,7 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
 import { applyOrchestrationV2ThreadVisit, pendingGuestMessageCount } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
+import { decodeStoredTurnItemJson } from "../persistence/legacyTurnItemPayload.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -1479,9 +1480,7 @@ const decodeMessagePayload = Schema.decodeUnknownEffect(
 const decodePlanJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2PlanArtifactSchema),
 );
-const decodeTurnItemPayload = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(OrchestrationV2TurnItemJsonSchema),
-);
+const decodeTurnItemPayload = decodeStoredTurnItemJson;
 const decodeCheckpointScopePayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2CheckpointScopeJsonSchema),
 );
