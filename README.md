@@ -35,9 +35,6 @@ git fetch upstream main
 git merge upstream/main
 ```
 
-A scheduled task does this every night at 06:00 and finishes the merge in its own
-thread, then dispatches **Fork release**. To publish one yourself, run **Fork
-release** in the Actions tab.
 [docs/operations/fork-changes.md](docs/operations/fork-changes.md) is what a merge has
 to keep, and [AGENTS.md](AGENTS.md) explains why the version is never committed here.
 
