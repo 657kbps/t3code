@@ -4324,6 +4324,21 @@
     },
     " app left its page and was stopped"
   ],
+  "796b81c4875c4feb": [
+    "The ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " app needs a newer ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " server on this environment. Update the server to use it."
+  ],
   "5ef18e4d39b398bf": [
     "Unable to load the ",
     {
@@ -4880,6 +4895,18 @@
   "41fff04f12ad189f": "Collapses the settled threads.",
   "0a271ec720fbe202": "Expands the settled threads.",
   "905197486607072f": "Discard",
+  "02c0ae493e689f90": "Goal",
+  "13300e8565fbd665": "{label} ({count})",
+  "694e089caefce25f": "{count, plural, one {Show {count} more settled threads} other {Show {count} more settled threads}}",
+  "ece9e2869077cbb6": "Discard {title}",
+  "306a6f95ad9d52f7": "Unsent",
+  "11276ab6c58b7a25": "Opens the draft in the new task composer. Swipe left to discard.",
+  "99950f3a28d425fa": "Sends when the environment reconnects. Opens the task for editing. Swipe left to delete.",
+  "d71048f4fb9cf44a": "Waiting to sync",
+  "0a260c7744afd0be": "Waiting",
+  "ad78fae7d373cf21": "Working",
+  "be451f475c514b37": "Dismiss Woke notification",
+  "54ccc22be28a985d": "Custom…",
   "bdd8716a3d6f1a53": "Arrange threads…",
   "e4c22e8809f2f431": "Unpin",
   "c49aa86c0d55101b": "Pin",
@@ -5322,6 +5349,9 @@
   "b9aae2f7cdb1a379": "No workflow runs yet",
   "ace8fc1c643cf9f6": "A workflow ties agents, code, schedules and questions to you into one run that survives restarts. Write one on your computer, under Workflows, then Definitions.",
   "fceb81aa6685fb47": "Chats",
+  "fc9c3a00cfc18b55": "All kinds",
+  "e4d1316c85ed7066": "No questions of this kind wait on you.",
+  "45a94c724845ec1d": "Other",
   "86798f07ba2d7f4d": "Search issues",
   "484cd83bb303bab8": "Search pull requests",
   "75ed31fcea4f741a": "Filter issues",
