@@ -19,6 +19,10 @@ and can drop it.
 - **`t3 update` reads this fork's releases**: `packages/shared/src/cliRelease.ts` points
   `CLI_RELEASE_REPOSITORY` at `657kbps/t3code`, and `apps/server/src/cli/update.test.ts`
   asserts the same URL.
+- **Mobile row split** (`apps/mobile/src/features/threads/thread-list-v2-items.tsx`): upstream's
+  single `ThreadListV2Row` becomes `ThreadListV2SlimRow` plus `ThreadListV2CardRow`, and menu
+  actions resolve lazily through `Menu.resolveActions` instead of building the tree at mount.
+  Upstream's edits to either row land on the fork's copies, so a merge applies them to both.
 - **Mobile APK updates** (`apps/mobile/src/features/updates/`): Android builds made by
   `fork-release.yml` check this fork's releases from **Settings → About → Updates**,
   download `T3-Code-<version>-arm64-v8a.apk`, and open the Android installer. The workflow
@@ -95,8 +99,11 @@ upstream's shape and the fork's behavior:
   `apps/server/src/cloud/traceRelayRequest.ts`, the mobile relay tracing layer, and the desktop
   `getRelayTelemetryEnabled` channel), mobile crash reporting
   (`apps/mobile/src/features/observability/`, `expo-observe`), and the relay's
-  `infra/relay/src/mobileTelemetry/` route with its Axiom datasets. The managed-policy `telemetry`
-  limit, `T3CODE_TELEMETRY_ENABLED` and the `T3CODE_TELEMETRY_CHANNEL` build define are gone too;
+  `infra/relay/src/mobileTelemetry/` route with its Axiom datasets. The relay's FCM push
+  payloads still hash the account id for 2.4.0+ clients, so
+  `infra/relay/src/agentActivity/fcmPayloads.ts` computes it with `@noble/hashes` instead of
+  the deleted `hashTelemetryId`. The managed-policy `telemetry` limit,
+  `T3CODE_TELEMETRY_ENABLED` and the `T3CODE_TELEMETRY_CHANNEL` build define are gone too;
   the build define is now `T3CODE_RELEASE_CHANNEL` (while `packages/shared/src/managedPolicyFile.ts`
   and `apps/server/src/persistence/legacyTurnItemPayload.ts` keep legacy policy files and
   `feedback_request` database rows readable). `docs/user/telemetry.md` became
