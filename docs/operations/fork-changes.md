@@ -60,6 +60,10 @@ upstream's shape and the fork's behavior:
 - **Policy and runtime modes** — `apps/server/src/policy/{managedProviders,managedSettings}.ts`
   and `apps/server/src/orchestration-v2/RuntimePolicy.ts` (with the Claude and Codex
   adapters beside it) map the fork's runtime modes onto the provider.
+- **Provider runtime mode limits** — upstream's `ProviderRuntimeModeLimit` (`server.getProviderRuntimeModeLimits`,
+  `useProviderRuntimeModeLimits`, `ComposerContextPermissions`' `instanceId` and `cwd`) sits
+  beside the fork's `ServerProviderRuntimeMode` list. Both stay, the fork's list first:
+  `runtimeModeConfig.ts`, `thread-settings-options.ts`, `ThreadSettingsSheet.tsx`, `ChatComposer.tsx`.
 - **MCP surface** — `apps/server/src/mcp/{McpInvocationContext,delegatedTaskModes}.ts` and
   `mcp/toolkits/project/handlers.ts` expose it to delegated tasks.
 - **ACP policy reuse** — `packages/provider-acp/src/server/clientPolicy.ts` exports and
@@ -110,7 +114,8 @@ upstream's shape and the fork's behavior:
   `docs/user/diagnostics-export.md`, and `docs/internals/08_product-analytics.md` is gone. A sync
   keeps these deletions: take this fork's version for the whole change instead of restoring
   upstream's. Everything else — local resource monitoring, local trace files, and user-configured
-  OTLP export — stays.
+  OTLP export — stays. A new page upstream's docs copy pass adds re-points its `./telemetry.md`
+  links at `diagnostics-export.md`, and drops its row for the deleted `t3 feedback` command.
 
 ## Mirroring `main`
 

@@ -189,6 +189,8 @@ function ContextPermissions() {
       environmentId={null}
       runtimeMode={mode}
       supportedRuntimeModes={["approval-required", "full-access"]}
+      instanceId={undefined}
+      cwd={null}
       onRuntimeModeChange={setMode}
     />
   );
@@ -224,6 +226,8 @@ function PerProviderPermissions() {
       environmentId={null}
       runtimeMode={mode}
       supportedRuntimeModes={["read-only", "workspace-write", "full-access"]}
+      instanceId={undefined}
+      cwd={null}
       providerRuntimeModes={[
         { mode: "read-only", label: "Read only", description: "Reads only", icon: "eye" },
         {
