@@ -16,6 +16,8 @@ export interface AppearancePreferencesSnapshot {
   readonly lightThemeId: Preferences["lightThemeId"];
   readonly darkThemeId: Preferences["darkThemeId"];
   readonly mathRenderingEnabled: Preferences["mathRenderingEnabled"];
+  readonly fontId: Preferences["fontId"];
+  readonly monoFontId: Preferences["monoFontId"];
 }
 
 export function selectAppearancePreferences(
@@ -36,6 +38,8 @@ export function selectAppearancePreferences(
     lightThemeId: preferences?.lightThemeId,
     darkThemeId: preferences?.darkThemeId,
     mathRenderingEnabled: preferences?.mathRenderingEnabled,
+    fontId: preferences?.fontId,
+    monoFontId: preferences?.monoFontId,
   };
 }
 
@@ -55,6 +59,8 @@ export function appearancePreferencesSnapshotsEqual(
     left.themeId === right.themeId &&
     left.lightThemeId === right.lightThemeId &&
     left.darkThemeId === right.darkThemeId &&
-    left.mathRenderingEnabled === right.mathRenderingEnabled
+    left.mathRenderingEnabled === right.mathRenderingEnabled &&
+    left.fontId === right.fontId &&
+    left.monoFontId === right.monoFontId
   );
 }
