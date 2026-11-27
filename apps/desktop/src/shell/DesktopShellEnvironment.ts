@@ -133,7 +133,6 @@ const WINDOWS_PROFILE_ENV_NAMES = [
   "PATH",
   "FNM_DIR",
   "FNM_MULTISHELL_PATH",
-  "T3CODE_TELEMETRY_ENABLED",
   "DO_NOT_TRACK",
 ] as const;
 const LOCALE_ENV_NAMES = ["LANG", "LC_ALL", "LC_CTYPE"] as const;
@@ -460,10 +459,8 @@ const installWindowsEnvironment = Effect.fn("desktop.shellEnvironment.installWin
     if (!config.env.FNM_MULTISHELL_PATH && profile.FNM_MULTISHELL_PATH) {
       config.env.FNM_MULTISHELL_PATH = profile.FNM_MULTISHELL_PATH;
     }
-    for (const name of ["T3CODE_TELEMETRY_ENABLED", "DO_NOT_TRACK"] as const) {
-      if (!config.env[name] && profile[name]) {
-        config.env[name] = profile[name];
-      }
+    if (!config.env.DO_NOT_TRACK && profile.DO_NOT_TRACK) {
+      config.env.DO_NOT_TRACK = profile.DO_NOT_TRACK;
     }
     return Boolean(noProfile.PATH && profile.PATH);
   },

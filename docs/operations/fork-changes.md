@@ -110,12 +110,23 @@ upstream's shape and the fork's behavior:
   `T3CODE_TELEMETRY_ENABLED` and the `T3CODE_TELEMETRY_CHANNEL` build define are gone too;
   the build define is now `T3CODE_RELEASE_CHANNEL` (while `packages/shared/src/managedPolicyFile.ts`
   and `apps/server/src/persistence/legacyTurnItemPayload.ts` keep legacy policy files and
-  `feedback_request` database rows readable). `docs/user/telemetry.md` became
+  `feedback_request` database rows readable). The variable also left `ShellEnvironmentPatch`
+  (`packages/contracts/src/resourceTelemetry.ts`), the desktop shell's env-name lists and its
+  Windows profile probe; upstream's test for it is adapted to the retained `DO_NOT_TRACK`
+  rather than restored. `docs/user/telemetry.md` became
   `docs/user/diagnostics-export.md`, and `docs/internals/08_product-analytics.md` is gone. A sync
   keeps these deletions: take this fork's version for the whole change instead of restoring
-  upstream's. Everything else — local resource monitoring, local trace files, and user-configured
-  OTLP export — stays. A new page upstream's docs copy pass adds re-points its `./telemetry.md`
-  links at `diagnostics-export.md`, and drops its row for the deleted `t3 feedback` command.
+  upstream's. The deletion reaches lines upstream keeps editing, so a sync conflicts beside a
+  removed line rather than on a changed one: the `observability/observe` import in
+  `apps/mobile/index.ts`, `withLocalTracing` and its webhook call in
+  `apps/server/src/scheduledTasks/ScheduledTaskService.ts`, and the `T3CODE_TELEMETRY_ENABLED`
+  entry in `scripts/smoke-desktop-app.ts`. Upstream's span sampling is the recurring case: it
+  rewraps service definitions as `Effect.fn(name, { attributes: routineSpan })`, so wherever the
+  fork removed `withLocalTracing` from such a wrapper or its imports, keep `routineSpan` and
+  leave the tracing out. Everything else — local resource monitoring, local trace files, and
+  user-configured OTLP export — stays. A new page upstream's docs copy pass adds re-points its
+  `./telemetry.md` links at `diagnostics-export.md`, and drops its row for the deleted `t3 feedback`
+  command.
 
 ## Mirroring `main`
 

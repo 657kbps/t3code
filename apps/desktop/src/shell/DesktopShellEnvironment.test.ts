@@ -1087,7 +1087,7 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
-  it.effect("applies saved Windows user telemetry opt-outs missing from the launcher", () =>
+  it.effect("applies a saved Windows user opt-out missing from the launcher", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = { PATH: "C:\\Windows\\System32" };
 
@@ -1095,17 +1095,14 @@ describe("DesktopShellEnvironment", () => {
         env,
         platform: "win32",
         handler: (command) =>
-          command._tag === "StandardCommand" &&
-          String(command.args.at(-1)).includes("T3CODE_TELEMETRY_ENABLED")
+          command._tag === "StandardCommand" && String(command.args.at(-1)).includes("DO_NOT_TRACK")
             ? envOutput({
                 PATH: "C:\\Windows\\System32",
-                T3CODE_TELEMETRY_ENABLED: "false",
                 DO_NOT_TRACK: "1",
               })
             : envOutput({ PATH: "C:\\Windows\\System32" }),
       });
 
-      assert.equal(env.T3CODE_TELEMETRY_ENABLED, "false");
       assert.equal(env.DO_NOT_TRACK, "1");
     }),
   );
