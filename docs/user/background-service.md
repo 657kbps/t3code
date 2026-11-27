@@ -39,7 +39,7 @@ T3CODE_HOST=127.0.0.1
 ## Platform support
 
 - **Linux**: Requires systemd user services with lingering enabled so T3 Code starts at boot and survives logout.
-- **macOS**: Starts at login, stops at logout. Keep the Mac logged in and awake for unattended access. If agents can't read Desktop/Documents/Downloads, grant Full Disk Access to the `t3` path in `~/Library/LaunchAgents/com.t3tools.t3code.service.plist`.
+- **macOS**: Starts at login, stops at logout. Keep the Mac logged in and awake for unattended access. If agents can't read Desktop, Documents or Downloads, grant Full Disk Access to the launcher in your T3 home, `runtime/wrapper/t3` (`~/.t3/runtime/wrapper/t3` by default). That path stays the same across updates, so the grant carries over; granting it to a downloaded version under `runtime/versions` asks again after every update.
 - **Windows**: Runs windowless via Task Scheduler (`t3code-<domain>-<user>`) while signed in and auto-restarts on exit. Lock the screen instead of signing out for unattended access.
 
 > Note: Signing out of T3 Connect does not stop or uninstall the background service.

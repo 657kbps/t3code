@@ -43,6 +43,12 @@ export function cliArchiveFileName(version: string, platformKey: CliArchivePlatf
   return `t3-${version}-${platformKey}.${platformKey.startsWith("win32") ? "zip" : "tar.gz"}`;
 }
 
+/**
+ * The macOS launcher stub the archive carries beside `t3`. The first install copies it to a fixed
+ * path; see `pinnedRuntimeWrapperPath` for why the service must start it instead of the runtime.
+ */
+export const CLI_ARCHIVE_MAC_WRAPPER_FILE = "t3-wrapper";
+
 const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases/download`;
 
 export function cliReleaseDownloadBaseUrl(

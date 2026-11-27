@@ -16,6 +16,7 @@ import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { CLI_ARCHIVE_MAC_WRAPPER_FILE } from "@t3tools/shared/cliRelease";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -432,7 +433,8 @@ export const signMacArchiveContents = Effect.fn("signMacArchiveContents")(functi
         entry.endsWith(".node") ||
         entry.endsWith(".dylib") ||
         entry.endsWith("spawn-helper") ||
-        entry.endsWith("t3-resource-monitor"),
+        entry.endsWith("t3-resource-monitor") ||
+        entry === CLI_ARCHIVE_MAC_WRAPPER_FILE,
     )
     .map((entry) => path.join(input.contentDir, entry));
 
@@ -634,6 +636,29 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
 
   yield* Effect.log(`[cli-archive] Staging ${stem}...`);
   yield* fs.copyFile(builtExecutable, path.join(contentDir, executableName));
+  // The launch agent starts this stub at a fixed path so a TCC grant survives updates; it must
+  // stay byte-identical, and Apple Silicon runs only signed binaries.
+  if (input.platform === "mac") {
+    const wrapperPath = path.join(contentDir, CLI_ARCHIVE_MAC_WRAPPER_FILE);
+    const wrapperSource = path.join(repoRoot, "native/macos-wrapper/main.c");
+    yield* requireInput(wrapperSource, "Every macOS CLI archive ships the launcher stub.");
+    yield* runCommand(
+      ChildProcess.make("clang", [
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-arch",
+        input.arch === "arm64" ? "arm64" : "x86_64",
+        // The SDK's own default is the runner's OS, which is newer than Node's macOS floor.
+        "-mmacosx-version-min=11.0",
+        "-o",
+        wrapperPath,
+        wrapperSource,
+      ]),
+      "clang (t3-wrapper)",
+    );
+    yield* fs.chmod(wrapperPath, 0o755);
+  }
   yield* stageWebClient(webClient, path.join(contentDir, "client"));
   yield* fs.copy(resourceMonitorDir, path.join(contentDir, "resource-monitor"));
   yield* stageRuntimeExternals({

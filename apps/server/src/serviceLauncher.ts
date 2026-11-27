@@ -28,10 +28,13 @@ import {
   decodeServiceUnit,
   disabledServiceTask,
   encodeServiceTask,
+  escapeXmlText,
+  isServiceWrapper,
   parseServiceState,
   serviceTaskIsDisabled,
   serviceUnitBaseDirOf,
   serviceUnitLogPathOf,
+  unescapeXmlText,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_LOCK_FILE,
   SERVICE_SERVING_LOCK_FILE,
@@ -262,20 +265,35 @@ const SERVICE_UNIT_PROGRAMS = [
   /(<Arguments>--headless "[^"<]*?[\\/]runtime[\\/]versions[\\/])([^\\/"<]+)([\\/]t3\.exe" "__service-launcher")/,
 ] as const;
 
+const PLIST_PROGRAM_ARRAY =
+  /(<key>ProgramArguments<\/key>\s*<array>[^\S\n]*\r?\n?)([ \t]*)(<string>)/;
+
 /**
- * The unit contents with their program pointed at `version`'s runtime. A unit
- * already at that version or a newer one is returned unchanged: `t3 update`
- * may have repointed it to a later version while this commit was in flight.
+ * Repoints the unit at `version` unless it already names `version` or newer (`t3 update` can race
+ * ahead while a commit is in flight), and inserts `wrapperPath` into an unwrapped macOS plist.
  */
-function repointServiceUnit(contents: string, version: string): string {
-  for (const program of SERVICE_UNIT_PROGRAMS) {
+function repointServiceUnit(contents: string, version: string, wrapperPath?: string): string {
+  for (const [index, program] of SERVICE_UNIT_PROGRAMS.entries()) {
     const match = program.exec(contents);
     if (match === null) continue;
     const [, prefix = "", current = "", suffix = ""] = match;
-    if (isExactServiceVersion(current) && compareExactServiceVersions(current, version) >= 0) {
-      return contents;
+    const nextContents =
+      isExactServiceVersion(current) && compareExactServiceVersions(current, version) >= 0
+        ? contents
+        : contents.replace(program, () => `${prefix}${version}${suffix}`);
+    if (index !== 1 || wrapperPath === undefined) return nextContents;
+    const plist = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(
+      nextContents,
+    )?.[1];
+    const firstArg = plist?.match(/<string>([^<]*)<\/string>/)?.[1];
+    if (firstArg !== undefined && isServiceWrapper(unescapeXmlText(firstArg))) {
+      return nextContents;
     }
-    return contents.replace(program, () => `${prefix}${version}${suffix}`);
+    return nextContents.replace(
+      PLIST_PROGRAM_ARRAY,
+      (_, head: string, indent: string, open: string) =>
+        `${head}${indent}<string>${escapeXmlText(wrapperPath)}</string>${head.endsWith("\n") ? `\n${indent}` : ""}${open}`,
+    );
   }
   return contents;
 }
@@ -1495,7 +1513,16 @@ export class Launcher {
         ) {
           return;
         }
-        const repointed = repointServiceUnit(contents, version);
+        const hasWrapper =
+          unit.path.endsWith(".plist") &&
+          (await NodeFSP.stat(NodePath.join(this.#baseDir, "runtime", "wrapper", "t3")).then(
+            (stats) => stats.isFile(),
+            () => false,
+          ));
+        const wrapperPath = hasWrapper
+          ? NodePath.join(installedBaseDir, "runtime", "wrapper", "t3")
+          : undefined;
+        const repointed = repointServiceUnit(contents, version, wrapperPath);
         if (repointed !== contents) {
           await replaceFileDurably(
             unit.path,

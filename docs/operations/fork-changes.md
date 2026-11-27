@@ -19,6 +19,23 @@ and can drop it.
 - **`t3 update` reads this fork's releases**: `packages/shared/src/cliRelease.ts` points
   `CLI_RELEASE_REPOSITORY` at `657kbps/t3code`, and `apps/server/src/cli/update.test.ts`
   asserts the same URL.
+- **macOS service permission wrapper** (`native/macos-wrapper/main.c`): macOS keys a TCC
+  grant to an executable's path and signature, and the pinned runtime's path carries its
+  version, so the launch agent lost Full Disk Access on every update. The macOS archive
+  carries a stub (`CLI_ARCHIVE_MAC_WRAPPER_FILE` in `packages/shared/src/cliRelease.ts`)
+  that installs once to `<T3 home>/runtime/wrapper/t3` and never changes afterwards; the
+  launch agent starts that stub and passes the versioned runtime as its argument, so an
+  update rewrites only the argument. `pinnedRuntime.ts` stages and hard-links it once,
+  `bootService.ts` builds the three-element `program`, `serviceProtocol.ts` reads the
+  runtime back out of the plist (and shares `escapeXmlText`, `unescapeXmlText`,
+  `isServiceWrapper`), `serviceLauncher.ts` migrates an unwrapped plist when the wrapper
+  is present, `cli/{service,update}.ts` and `docs/user/background-service.md` name the
+  fixed path, and `build-cli-archive.ts` / `smoke-cli-archive.ts` compile, sign and
+  smoke-test it. `sudo launchctl procinfo <server pid> | grep responsible` names the
+  binary a grant is charged to, which is how a report of "agents lost access again" is
+  diagnosed. Upstream has none of this: a merge keeps the fork's `bootService.ts` (which
+  already conflicts for the launch agent stop) and `serviceLauncher.ts` plist repointing,
+  and re-applies the archive compile, sign and smoke steps.
 - **Mobile row split** (`apps/mobile/src/features/threads/thread-list-v2-items.tsx`): upstream's
   single `ThreadListV2Row` becomes `ThreadListV2SlimRow` plus `ThreadListV2CardRow`, and menu
   actions resolve lazily through `Menu.resolveActions` instead of building the tree at mount.

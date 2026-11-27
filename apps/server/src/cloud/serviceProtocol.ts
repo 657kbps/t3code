@@ -33,7 +33,10 @@ const unquoteSystemdValue = (raw: string) =>
     : raw
   ).replaceAll("%%", "%");
 
-const unescapeXmlText = (value: string) =>
+export const escapeXmlText = (value: string): string =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
+export const unescapeXmlText = (value: string) =>
   value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 
 const unquoteWindowsArgument = (raw: string) =>
@@ -98,14 +101,24 @@ export function serviceUnitLogPathOf(contents: string): string | undefined {
   return plist === undefined ? undefined : unescapeXmlText(plist);
 }
 
-/** The executable an installed unit, plist, or task starts: the launcher's runtime. */
+/** The fixed macOS launcher a unit starts in place of a versioned runtime. */
+export const isServiceWrapper = (program: string) =>
+  /[\\/]runtime[\\/]wrapper[\\/]t3$/.test(program);
+
+/**
+ * The executable an installed unit, plist, or task starts: the launcher's runtime. A macOS unit
+ * starts the wrapper first and passes the runtime it should run as its argument.
+ */
 export function serviceUnitProgramOf(contents: string): string | undefined {
   const systemd = /^ExecStart=("(?:\\.|[^"\\])*"|\S+)/m.exec(contents)?.[1];
   if (systemd !== undefined) return unquoteSystemdValue(systemd);
-  const plist = /<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/.exec(
-    contents,
-  )?.[1];
-  if (plist !== undefined) return unescapeXmlText(plist);
+  const plist = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(contents)?.[1];
+  if (plist !== undefined) {
+    const [program, runtime] = Array.from(plist.matchAll(/<string>([^<]*)<\/string>/g), (match) =>
+      unescapeXmlText(match[1] ?? ""),
+    );
+    return program !== undefined && isServiceWrapper(program) ? runtime : program;
+  }
   const task = /<Arguments>--headless "([^"]*)"/.exec(contents)?.[1];
   return task === undefined ? undefined : unquoteWindowsArgument(task);
 }
