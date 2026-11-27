@@ -156,7 +156,15 @@ export function formatServiceChange(
   if (result.plan.handedOff === true) {
     return `Service update to t3@${packageJson.version} queued. This session will disconnect.\nLog: ${result.plan.logPath}`;
   }
-  return `Service ${result.previouslyInstalled ? "updated" : "installed"} · t3@${packageJson.version}\nLog: ${result.plan.logPath}`;
+  return [
+    `Service ${result.previouslyInstalled ? "updated" : "installed"} · t3@${packageJson.version}`,
+    `Log: ${result.plan.logPath}`,
+    ...(result.plan.wrapperPath === undefined
+      ? []
+      : [
+          `Full Disk Access: grant it to ${result.plan.wrapperPath} once; updates keep that path, so the grant sticks.`,
+        ]),
+  ].join("\n");
 }
 
 const MEMORY_CONTROLLER_DISABLED =

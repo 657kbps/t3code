@@ -24,7 +24,8 @@ import { vi } from "vite-plus/test";
 import * as ProcessRunner from "../processRunner.ts";
 import { serviceLauncherLockPath } from "../serviceLauncher.ts";
 import * as BootService from "./bootService.ts";
-import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
+import { CLI_ARCHIVE_MAC_WRAPPER_FILE } from "@t3tools/shared/cliRelease";
+import { pinnedRuntimePaths, pinnedRuntimeWrapperPath } from "./pinnedRuntime.ts";
 import { RESTORE_OOMD_WATCH_SCRIPT } from "./userManagerOom.ts";
 import {
   decodeServiceUnit,
@@ -1645,6 +1646,35 @@ process.disconnect();
       expect(timeouts.get("launchctl bootout gui/501/com.t3tools.t3code.service")).toEqual(
         Duration.seconds(120),
       );
+    }),
+  );
+
+  it.effect("starts the fixed macOS wrapper so a TCC grant survives updates", () =>
+    Effect.gen(function* () {
+      const { service, fs, baseDir, runtime } = yield* makeHarness("darwin");
+      const path = yield* Path.Path;
+      const wrapper = pinnedRuntimeWrapperPath(path, baseDir);
+      // Every macOS archive carries the wrapper beside the runtime it launches.
+      const shipped = path.join(runtime.versionDir, CLI_ARCHIVE_MAC_WRAPPER_FILE);
+      yield* fs.writeFileString(shipped, "first wrapper\n");
+
+      const plan = yield* service.install();
+      const unit = yield* fs.readFileString(plan.unitPath);
+      expect(plan.wrapperPath).toBe(wrapper);
+      expect(unit).toContain(
+        `    <string>${wrapper}</string>\n    <string>${runtime.entryPath}</string>\n    <string>__service-launcher</string>`,
+      );
+      expect(yield* fs.readFileString(wrapper)).toBe("first wrapper\n");
+      expect(yield* fs.readDirectory(path.dirname(wrapper))).toEqual([path.basename(wrapper)]);
+      // The unit still names the runtime it starts, so status and pruning read it as before.
+      expect(BootService.bootServiceProgramOf(unit)).toBe(runtime.entryPath);
+      expect(yield* service.status).toMatchObject({ current: true });
+
+      // A later release never replaces the wrapper: macOS recorded the TCC grant against these
+      // bytes, and a new signature would need the grant again.
+      yield* fs.writeFileString(shipped, "second wrapper\n");
+      yield* service.install();
+      expect(yield* fs.readFileString(wrapper)).toBe("first wrapper\n");
     }),
   );
 

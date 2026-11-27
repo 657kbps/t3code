@@ -13,6 +13,7 @@ import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import {
+  CLI_ARCHIVE_MAC_WRAPPER_FILE,
   CLI_RELEASE_CHECKSUMS_FILE,
   cliArchiveFileName,
   cliArchivePlatformKey,
@@ -64,6 +65,16 @@ export function pinnedRuntimePaths(
     entryPath: path.join(versionDir, platform === "win32" ? "t3.exe" : "t3"),
     sentinelPath: path.join(versionDir, ".install-complete"),
   };
+}
+
+/**
+ * The macOS launcher the service unit starts, at a path no update changes. macOS records a TCC
+ * grant (Full Disk Access, Desktop, Documents) against an executable's path and signature, and
+ * the runtime's own path carries its version, so a unit that started the runtime lost its grant
+ * on every update.
+ */
+export function pinnedRuntimeWrapperPath(path: Path.Path, baseDir: string): string {
+  return path.join(baseDir, PINNED_RUNTIME_DIR, "wrapper", "t3");
 }
 
 export class PinnedRuntimeInstallError extends Schema.TaggedError<PinnedRuntimeInstallError>()(
@@ -492,8 +503,71 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   );
 });
 
+/**
+ * Copies the archive's launcher stub to {@link pinnedRuntimeWrapperPath} the first time any runtime
+ * is installed. Later versions leave an existing wrapper alone: replacing it would change the code
+ * signature that the macOS TCC grant on that path is recorded against.
+ */
+const installPinnedRuntimeWrapper = Effect.fn("cloud.pinned_runtime.install_wrapper")(
+  function* (input: {
+    readonly fs: FileSystem.FileSystem;
+    readonly path: Path.Path;
+    readonly baseDir: string;
+    readonly versionDir: string;
+    readonly platform: NodeJS.Platform;
+  }) {
+    if (input.platform !== "darwin") return;
+    const wrapper = pinnedRuntimeWrapperPath(input.path, input.baseDir);
+    if (yield* input.fs.exists(wrapper).pipe(Effect.orElseSucceed(() => false))) return;
+    // Runtimes installed before the archive carried the wrapper have nothing to copy.
+    const source = input.path.join(input.versionDir, CLI_ARCHIVE_MAC_WRAPPER_FILE);
+    if (!(yield* input.fs.exists(source).pipe(Effect.orElseSucceed(() => false)))) return;
+    const bytes = yield* input.fs.readFile(source);
+    const wrapperDir = input.path.dirname(wrapper);
+    yield* input.fs.makeDirectory(wrapperDir, { recursive: true });
+    // Stage and hard-link atomically so an interrupted copy cannot leave a truncated binary
+    // that blocks later installs and breaks launchd.
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const staging = yield* input.fs.makeTempFileScoped({
+          directory: wrapperDir,
+          prefix: ".t3-",
+        });
+        yield* input.fs.writeFile(staging, bytes);
+        yield* input.fs.chmod(staging, 0o755);
+        yield* input.fs.link(staging, wrapper);
+      }),
+    );
+    yield* Effect.logInfo("Installed the fixed macOS launcher for the background service.", {
+      path: wrapper,
+    });
+  },
+);
+
 export const ensurePinnedRuntimeInstalled = (input: PinnedRuntimeInstallInput) =>
-  pinnedRuntimeInstallLock.withPermit(installPinnedRuntime(input));
+  pinnedRuntimeInstallLock.withPermit(
+    installPinnedRuntime(input).pipe(
+      // A wrapper that cannot be written leaves the unit on the versioned runtime: it still runs,
+      // so a failed copy must not fail the install. Two installs racing here either way leave the
+      // first wrapper, and the grant recorded against it, in place.
+      Effect.tap((paths) =>
+        installPinnedRuntimeWrapper({
+          fs: input.fs,
+          path: input.path,
+          baseDir: input.baseDir,
+          versionDir: paths.versionDir,
+          platform: input.platform,
+        }).pipe(
+          Effect.catchTags({
+            PlatformError: (error) =>
+              error.reason._tag === "AlreadyExists"
+                ? Effect.void
+                : Effect.logWarning("Could not install the macOS launcher.", { cause: error }),
+          }),
+        ),
+      ),
+    ),
+  );
 
 const PINNED_RUNTIME_STAGING_PREFIX = ".staging-";
 const PINNED_RUNTIME_PRUNED_PREFIX = ".pruned-";

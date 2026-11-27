@@ -16,6 +16,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { CLI_ARCHIVE_MAC_WRAPPER_FILE } from "@t3tools/shared/cliRelease";
 import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
@@ -97,11 +98,13 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   }
   const contentDir = path.join(scratch, root);
   const executable = path.join(contentDir, platform === "win32" ? "t3.exe" : "t3");
+  const macWrapper = path.join(contentDir, CLI_ARCHIVE_MAC_WRAPPER_FILE);
   const bundledLibatomic = path.join(contentDir, "lib/libatomic.so.1");
   for (const required of [
     executable,
     path.join(contentDir, "client/index.html"),
     path.join(contentDir, "client/.vite/manifest.json"),
+    ...(platform === "darwin" ? [macWrapper] : []),
     ...(platform === "linux" ? [bundledLibatomic, `${bundledLibatomic}.LICENSE`] : []),
   ]) {
     if (!(yield* fs.exists(required))) {
@@ -134,6 +137,16 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
       step: "running --version",
       detail: `exit ${String(version.exitCode)}\n${version.stdout}${version.stderr}`,
     });
+  }
+
+  if (platform === "darwin") {
+    const wrappedVersion = yield* runExecutable(macWrapper, [executable, "--version"], contentDir);
+    if (wrappedVersion.exitCode !== 0 || !wrappedVersion.stdout.includes(input.expectVersion)) {
+      return yield* new CliArchiveSmokeError({
+        step: "running --version through t3-wrapper",
+        detail: `exit ${String(wrappedVersion.exitCode)}\n${wrappedVersion.stdout}${wrappedVersion.stderr}`,
+      });
+    }
   }
 
   // The service launcher loads outside the embedded CLI; without T3CODE_HOME it exits right away.

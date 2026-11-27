@@ -9,6 +9,8 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import { CLI_ARCHIVE_MAC_WRAPPER_FILE } from "@t3tools/shared/cliRelease";
+
 import { awaitCliNotarization, signMacArchiveContents } from "./build-cli-archive.ts";
 
 const signedEnv = {
@@ -212,5 +214,31 @@ it.layer(NodeServices.layer)("build-cli-archive notarization", (it) => {
       assert.equal(error._tag, "CliArchiveNotarizationRejectedError");
       assert.isTrue(notarySubcommands(stub.calls)[0]?.includes("--wait"));
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("signs the macOS launcher beside the runtime", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const content = yield* makeContent();
+      const wrapper = path.join(content.contentDir, CLI_ARCHIVE_MAC_WRAPPER_FILE);
+      yield* fs.writeFileString(wrapper, "wrapper");
+      const stub = stubSpawner(() => ({ exitCode: 0 }));
+      yield* withStubs(
+        signMacArchiveContents({
+          repoRoot: content.root,
+          contentDir: content.contentDir,
+          executablePath: content.executablePath,
+          notarySubmissionFile: Option.none(),
+        }),
+        stub,
+        // No App Store Connect key: sign, then stop before notarization.
+        { T3CODE_CLI_MAC_SIGN_IDENTITY: signedEnv.T3CODE_CLI_MAC_SIGN_IDENTITY },
+      );
+      assert.deepEqual(
+        stub.calls.filter((argv) => argv[0] === "codesign").map((argv) => argv.at(-1)),
+        [wrapper, content.executablePath],
+      );
+    }),
   );
 });

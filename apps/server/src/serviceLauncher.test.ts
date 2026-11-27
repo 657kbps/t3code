@@ -539,6 +539,98 @@ setInterval(() => {}, 1_000);
     }),
   );
 
+  it.effect("repoints the runtime a macOS wrapper starts and leaves the wrapper in place", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-wrapper-" });
+      const home = path.join(root, "home");
+      const unitPath = path.join(home, "Library", "LaunchAgents", "t3code.plist");
+      const wrapper = path.join(root, "runtime", "wrapper", "t3");
+      const render = (version: string) =>
+        renderBootServicePlist(
+          { ...unitPlan(root, version), program: [wrapper, ...unitPlan(root, version).program] },
+          { homeDir: home, environmentPath: "" },
+        );
+      yield* fs.makeDirectory(path.dirname(unitPath), { recursive: true });
+      yield* fs.writeFileString(unitPath, render("1.0.0"));
+      yield* writeFakeRuntime(
+        fs,
+        path,
+        path.join(root, "runtime", "versions", "1.1.0"),
+        "process.exit(0);\n",
+      );
+      yield* Effect.promise(() =>
+        writeServiceState(path.join(root, "runtime", "service-state.json"), {
+          protocol: SERVICE_LAUNCHER_PROTOCOL,
+          activeVersion: "1.1.0",
+          update: {
+            id: "update-1",
+            fromVersion: "1.0.0",
+            targetVersion: "1.1.0",
+            status: "committed",
+          },
+        }),
+      );
+      vi.stubEnv("HOME", home);
+      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "t3code.plist");
+
+      yield* Effect.promise(() =>
+        expect(runLauncher(root)).rejects.toThrow("Active child exited unexpectedly (0)."),
+      );
+
+      assert.equal(yield* fs.readFileString(unitPath), render("1.1.0"));
+    }),
+  );
+
+  it.effect("migrates an unwrapped macOS plist to the installed wrapper on repoint", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-migrate-" });
+      const home = path.join(root, "home");
+      const unitPath = path.join(home, "Library", "LaunchAgents", "t3code.plist");
+      const wrapper = path.join(root, "runtime", "wrapper", "t3");
+      const renderUnwrapped = (version: string) =>
+        renderBootServicePlist(unitPlan(root, version), { homeDir: home, environmentPath: "" });
+      const renderWrapped = (version: string) =>
+        renderBootServicePlist(
+          { ...unitPlan(root, version), program: [wrapper, ...unitPlan(root, version).program] },
+          { homeDir: home, environmentPath: "" },
+        );
+      yield* fs.makeDirectory(path.dirname(unitPath), { recursive: true });
+      yield* fs.makeDirectory(path.dirname(wrapper), { recursive: true });
+      yield* fs.writeFileString(wrapper, "wrapper\n");
+      yield* fs.writeFileString(unitPath, renderUnwrapped("1.0.0"));
+      yield* writeFakeRuntime(
+        fs,
+        path,
+        path.join(root, "runtime", "versions", "1.1.0"),
+        "process.exit(0);\n",
+      );
+      yield* Effect.promise(() =>
+        writeServiceState(path.join(root, "runtime", "service-state.json"), {
+          protocol: SERVICE_LAUNCHER_PROTOCOL,
+          activeVersion: "1.1.0",
+          update: {
+            id: "update-1",
+            fromVersion: "1.0.0",
+            targetVersion: "1.1.0",
+            status: "committed",
+          },
+        }),
+      );
+      vi.stubEnv("HOME", home);
+      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "t3code.plist");
+
+      yield* Effect.promise(() =>
+        expect(runLauncher(root)).rejects.toThrow("Active child exited unexpectedly (0)."),
+      );
+
+      assert.equal(yield* fs.readFileString(unitPath), renderWrapped("1.1.0"));
+    }),
+  );
+
   it.effect(
     "repoints the systemd unit the manager loads when environment.d moves XDG_CONFIG_HOME",
     () =>

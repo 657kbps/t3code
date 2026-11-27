@@ -29,6 +29,7 @@ import {
   launcherOwnsVersionsDir,
   isUnpublishedRelease,
   pinnedRuntimePaths,
+  pinnedRuntimeWrapperPath,
   PinnedRuntimePreflightBlockedError,
   pinnedRuntimeVersionsDir,
   prunePinnedRuntimes,
@@ -495,6 +496,12 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     }
   }
 
+  // The macOS service starts a fixed wrapper so TCC grants survive updates. Its first appearance
+  // moves the path the user grants, which is worth saying once.
+  const wrapperBefore = yield* fs
+    .exists(pinnedRuntimeWrapperPath(path, input.baseDir))
+    .pipe(Effect.orElseSucceed(() => false));
+
   const runtime = yield* ensurePinnedRuntimeInstalled({
     onProgress: progress.report,
     baseDir: input.baseDir,
@@ -600,6 +607,11 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   }
 
   progress.success(`Installed T3 Code ${targetVersion}`);
+  if (!wrapperBefore && servicePlan?.wrapperPath !== undefined) {
+    yield* Console.log(
+      `  Full Disk Access: grant it to ${servicePlan.wrapperPath} once. The service now starts that fixed path, so later updates keep the grant.`,
+    );
+  }
   if (Option.isSome(repointed)) {
     yield* Console.log("  Run t3 to get started.\n");
   } else {

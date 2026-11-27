@@ -32,6 +32,7 @@ import {
   pinnedRuntimeCommand,
   pinnedRuntimePaths,
   pinnedRuntimeVersionsDir,
+  pinnedRuntimeWrapperPath,
   PinnedRuntimeInstallError,
 } from "./pinnedRuntime.ts";
 import {
@@ -43,6 +44,7 @@ import {
   decodeServiceUnit,
   disabledServiceTask,
   encodeServiceTask,
+  escapeXmlText,
   serviceTaskIsDisabled,
   serviceUnitBaseDirOf as bootServiceBaseDirOf,
   serviceUnitEnvironmentValueOf,
@@ -91,6 +93,8 @@ export interface BootServicePlan {
   readonly logPath: string;
   readonly unitPath: string;
   readonly installBinDir?: string;
+  /** The fixed macOS launcher the unit starts, when an install has placed one. */
+  readonly wrapperPath?: string;
   /** The manager accepted a detached install; its outcome is written to `logPath`. */
   readonly handedOff?: boolean;
 }
@@ -146,10 +150,6 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     "WantedBy=default.target",
     "",
   ].join("\n");
-}
-
-function escapeXmlText(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 /** Launch agents cannot rely on the user's shell or PATH. */
@@ -863,6 +863,19 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const host = input.host ?? { execPath: hostExecPath };
   const runtimePaths = pinnedRuntimePaths(path, input.baseDir, input.cliVersion, platform);
   const versionsDir = pinnedRuntimeVersionsDir(path, input.baseDir);
+  // The wrapper arrives inside the runtime archive, so a plan can predate it; macOS alone needs it.
+  const installedWrapper = Effect.gen(function* () {
+    if (platform !== "darwin") return undefined;
+    const wrapper = pinnedRuntimeWrapperPath(path, input.baseDir);
+    return (yield* fs.exists(wrapper).pipe(Effect.orElseSucceed(() => false)))
+      ? wrapper
+      : undefined;
+  });
+  let runtimeWrapper = yield* installedWrapper;
+  const launcherProgram = (entryPath: string): ReadonlyArray<string> =>
+    runtimeWrapper === undefined
+      ? [entryPath, "__service-launcher"]
+      : [runtimeWrapper, entryPath, "__service-launcher"];
   const xmlSafeInstallerDirectories = installerPath.split(":").filter(
     (directory) =>
       directory.length > 0 &&
@@ -1019,10 +1032,11 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     });
     const unitPath = manager?.unitPath ?? "";
     const plan: BootServicePlan = {
-      program: [runtimePaths.entryPath, "__service-launcher"],
+      program: launcherProgram(runtimePaths.entryPath),
       baseDir: input.baseDir,
       logPath,
       unitPath,
+      ...(runtimeWrapper === undefined ? {} : { wrapperPath: runtimeWrapper }),
     };
     return { manager, unitPath, plan };
   };
@@ -1394,6 +1408,13 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           : new BootServiceInstallError({ cause: error }),
       ),
     );
+    // This install may be the one that placed the macOS wrapper, and the unit written below has
+    // to name it: a unit that keeps starting the versioned runtime loses its TCC grant on the
+    // next update.
+    if (platform === "darwin") {
+      runtimeWrapper = yield* installedWrapper;
+      ({ unitPath, plan } = resolveTarget(systemdUnitDir));
+    }
     const installed = yield* fs
       .exists(unitPath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
